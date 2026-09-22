@@ -1,0 +1,15 @@
+.gradle/
+build/
+local.properties
+.idea/
+*.iml
+.DS_Store
+captures/
+.kotlin/
+# Config do Firebase fica fora do git
+app/google-services.json
+firebase/functions/node_modules/
+firebase/functions/lib/
+firebase/.firebase/
+*.jks
+*.keystore

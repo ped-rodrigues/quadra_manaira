@@ -1,0 +1,145 @@
+rules_version = '2';
+
+// Regras de segurança do Firestore da Quadra de Manaíra.
+// O app nunca é confiável: toda regra de negócio importante é validada aqui.
+service cloud.firestore {
+  match /databases/{database}/documents {
+
+    function signedIn() {
+      return request.auth != null;
+    }
+
+    function isUser(uid) {
+      return signedIn() && request.auth.uid == uid;
+    }
+
+    function data() {
+      return request.resource.data;
+    }
+
+    function validDate(s) {
+      return s is string && s.matches('^\\d{4}-\\d{2}-\\d{2}$');
+    }
+
+    function validTime(s) {
+      // Só horários cheios ou meia-hora, das 06:00 às 22:00.
+      return s is string && s.matches('^(0[6-9]|1\\d|2[0-2]):(00|30)$');
+    }
+
+    // ---------- Usuários ----------
+    match /users/{uid} {
+      allow read: if signedIn();
+      allow create, update: if isUser(uid)
+        && data().name is string && data().name.size() >= 2 && data().name.size() <= 60
+        && data().nameLower == data().name.lower()
+        && data().email == request.auth.token.email
+        && data().sport in ['FUTEBOL', 'BASQUETE', 'VOLEI_PRAIA', 'GINASTICA'];
+      allow delete: if false;
+
+      // Tokens de push dos aparelhos do usuário.
+      match /tokens/{token} {
+        allow read, write: if isUser(uid);
+      }
+
+      // Histórico de notificações: criado só pelas Cloud Functions; o usuário só marca como lida.
+      match /notifications/{id} {
+        allow read, delete: if isUser(uid);
+        allow update: if isUser(uid) && request.resource.data.diff(resource.data).affectedKeys().hasOnly(['read']);
+        allow create: if false;
+      }
+    }
+
+    // ---------- Agendamentos ----------
+    match /bookings/{bookingId} {
+      allow read: if signedIn();
+
+      // Só cria em nome próprio e só se o bloco inicial de horário foi reservado na mesma transação.
+      allow create: if signedIn()
+        && data().organizerId == request.auth.uid
+        && data().status == 'CONFIRMED'
+        && data().reminderSent == false
+        && validDate(data().date) && validTime(data().startTime) && validTime(data().endTime)
+        && data().endTime > data().startTime
+        && data().sport in ['FUTEBOL', 'BASQUETE', 'VOLEI_PRAIA', 'GINASTICA']
+        && data().notes is string && data().notes.size() <= 300
+        && getAfter(/databases/$(database)/documents/slots/$(data().date + '_' + data().startTime)).data.bookingId == bookingId;
+
+      // Só o organizador cancela, e cancelar é a única alteração permitida.
+      allow update: if signedIn()
+        && resource.data.organizerId == request.auth.uid
+        && request.resource.data.diff(resource.data).affectedKeys().hasOnly(['status'])
+        && data().status == 'CANCELLED';
+
+      allow delete: if false;
+    }
+
+    // Blocos de 30 min ocupados. Não podem ser sobrescritos (update proibido) → impede conflito de horário.
+    match /slots/{slotId} {
+      allow read: if signedIn();
+      allow create: if signedIn()
+        && data().organizerId == request.auth.uid
+        && slotId.matches('^\\d{4}-\\d{2}-\\d{2}_\\d{2}:\\d{2}$')
+        && getAfter(/databases/$(database)/documents/bookings/$(data().bookingId)).data.organizerId == request.auth.uid;
+      allow update: if false;
+      allow delete: if signedIn() && resource.data.organizerId == request.auth.uid;
+    }
+
+    // ---------- Mural ----------
+    match /posts/{postId} {
+      allow read: if signedIn();
+      allow create: if signedIn()
+        && data().authorId == request.auth.uid
+        && data().likesCount == 0
+        && data().text is string && data().text.size() >= 1 && data().text.size() <= 1000;
+      allow delete: if signedIn() && resource.data.authorId == request.auth.uid;
+
+      // Único update permitido: +1/-1 no contador, junto com a criação/remoção da própria curtida.
+      allow update: if signedIn()
+        && request.resource.data.diff(resource.data).affectedKeys().hasOnly(['likesCount'])
+        && (
+          (data().likesCount == resource.data.likesCount + 1
+            && !exists(/databases/$(database)/documents/posts/$(postId)/likes/$(request.auth.uid))
+            && existsAfter(/databases/$(database)/documents/posts/$(postId)/likes/$(request.auth.uid)))
+          ||
+          (data().likesCount == resource.data.likesCount - 1
+            && exists(/databases/$(database)/documents/posts/$(postId)/likes/$(request.auth.uid))
+            && !existsAfter(/databases/$(database)/documents/posts/$(postId)/likes/$(request.auth.uid)))
+        );
+
+      match /likes/{uid} {
+        allow read: if signedIn();
+        allow create: if isUser(uid) && data().uid == uid;
+        allow delete: if isUser(uid);
+      }
+    }
+
+    // Consulta "minhas curtidas" (collection group).
+    match /{path=**}/likes/{uid} {
+      allow read: if signedIn();
+    }
+
+    // ---------- Chat ----------
+    // O id da conversa é "uidA_uidB" (ordenados), então dá pra saber os participantes pelo id.
+    match /conversations/{convId} {
+      function isParticipant() {
+        return signedIn() && request.auth.uid in convId.split('_');
+      }
+
+      allow get: if isParticipant();
+      allow list: if signedIn() && request.auth.uid in resource.data.participants;
+      allow create, update: if isParticipant()
+        && data().participants == convId.split('_');
+      allow delete: if false;
+
+      match /messages/{messageId} {
+        allow read: if isParticipant();
+        allow create: if isParticipant()
+          && data().senderId == request.auth.uid
+          && data().receiverId in convId.split('_')
+          && data().receiverId != request.auth.uid
+          && data().text is string && data().text.size() >= 1 && data().text.size() <= 2000;
+        allow update, delete: if false;
+      }
+    }
+  }
+}

@@ -1,0 +1,4 @@
+<LinearLayout xmlns:android="http://schemas.android.com/apk/res/android" android:orientation="1" android:layout_width="-1" android:layout_height="-1">
+  <EditText android:gravity="0x00000011" android:id="@7F050032" android:layout_width="-2" android:layout_height="-2" android:minHeight="200.000000px" android:text="EditText" android:inputType="0x00000001"/>
+  <Button android:id="@7F050035" android:layout_width="-1" android:layout_height="-2" android:text="Hide Ime" android:textAllCaps="false"/>
+</LinearLayout>

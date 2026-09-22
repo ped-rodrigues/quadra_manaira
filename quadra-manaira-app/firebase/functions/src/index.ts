@@ -1,0 +1,185 @@
+/**
+ * Cloud Functions da Quadra de Manaíra.
+ *
+ * - Push de novo agendamento / cancelamento (para todos, via tópico "quadra")
+ * - Push de mensagem privada para o DESTINATÁRIO (corrige F4)
+ * - Lembrete de verdade 24h antes do jogo (corrige F3)
+ * - Aniversariantes do dia (corrige F2)
+ *
+ * Requer o plano Blaze do Firebase (tem cota gratuita; o uso deste app cabe nela).
+ */
+import { initializeApp } from "firebase-admin/app";
+import { FieldValue, Timestamp, getFirestore } from "firebase-admin/firestore";
+import { getMessaging } from "firebase-admin/messaging";
+import { setGlobalOptions } from "firebase-functions/v2";
+import { onDocumentCreated, onDocumentUpdated } from "firebase-functions/v2/firestore";
+import { onSchedule } from "firebase-functions/v2/scheduler";
+import * as logger from "firebase-functions/logger";
+
+initializeApp();
+setGlobalOptions({ region: "southamerica-east1", maxInstances: 5 });
+
+const db = getFirestore();
+const messaging = getMessaging();
+
+const TOPIC_ALL = "quadra";
+const TIME_ZONE = "America/Recife";
+const CHANNEL_ID = "quadra_manaira";
+
+const SPORTS: Record<string, string> = {
+  FUTEBOL: "Futebol",
+  BASQUETE: "Basquete",
+  VOLEI_PRAIA: "Vôlei de Praia",
+  GINASTICA: "Ginástica",
+};
+
+type NotificationType = "BOOKING" | "CHAT" | "ALERT_24H" | "BIRTHDAY" | "SYSTEM";
+
+function formatDate(isoDate: string): string {
+  const [, month, day] = isoDate.split("-");
+  return `${day}/${month}`;
+}
+
+function androidConfig(key: string) {
+  return {
+    priority: "high" as const,
+    notification: { channelId: CHANNEL_ID, tag: key },
+  };
+}
+
+/** Grava no histórico do usuário e envia push para todos os aparelhos dele. */
+async function notifyUser(uid: string, type: NotificationType, title: string, body: string, key: string) {
+  await db.collection("users").doc(uid).collection("notifications").add({
+    type,
+    title,
+    message: body,
+    read: false,
+    createdAt: FieldValue.serverTimestamp(),
+  });
+
+  const tokensSnap = await db.collection("users").doc(uid).collection("tokens").get();
+  const tokens = tokensSnap.docs.map((d) => d.id);
+  if (tokens.length === 0) return;
+
+  const response = await messaging.sendEachForMulticast({
+    tokens,
+    notification: { title, body },
+    data: { type, key, title, body },
+    android: androidConfig(key),
+  });
+
+  // Remove tokens de aparelhos que desinstalaram o app ou trocaram de token.
+  const invalid = response.responses
+    .map((r, i) => ({ r, token: tokens[i] }))
+    .filter(({ r }) =>
+      !r.success &&
+      ["messaging/registration-token-not-registered", "messaging/invalid-registration-token"]
+        .includes(r.error?.code ?? ""))
+    .map(({ token }) => token);
+  await Promise.all(invalid.map((t) => db.collection("users").doc(uid).collection("tokens").doc(t).delete()));
+}
+
+async function notifyAll(type: NotificationType, title: string, body: string, key: string) {
+  await messaging.send({
+    topic: TOPIC_ALL,
+    notification: { title, body },
+    data: { type, key, title, body },
+    android: androidConfig(key),
+  });
+}
+
+// ---------- Agendamentos ----------
+
+export const onBookingCreated = onDocumentCreated("bookings/{bookingId}", async (event) => {
+  const b = event.data?.data();
+  if (!b) return;
+  const sport = SPORTS[b.sport] ?? b.sport;
+  const when = `${formatDate(b.date)} às ${b.startTime}`;
+
+  await notifyUser(
+    b.organizerId, "BOOKING", "✅ Jogo agendado",
+    `Seu jogo de ${sport} em ${when} está confirmado. Você recebe um lembrete 24h antes.`,
+    `booking_${event.params.bookingId}`,
+  );
+  await notifyAll(
+    "BOOKING", "📅 Novo agendamento na quadra",
+    `${b.organizerName} agendou ${sport} em ${when}. Confira na Agenda!`,
+    `booking_${event.params.bookingId}`,
+  );
+});
+
+export const onBookingUpdated = onDocumentUpdated("bookings/{bookingId}", async (event) => {
+  const before = event.data?.before.data();
+  const after = event.data?.after.data();
+  if (!before || !after) return;
+  if (before.status === "CANCELLED" || after.status !== "CANCELLED") return;
+
+  const sport = SPORTS[after.sport] ?? after.sport;
+  await notifyAll(
+    "BOOKING", "❌ Agendamento cancelado",
+    `O jogo de ${sport} em ${formatDate(after.date)} às ${after.startTime} foi cancelado. Horário liberado!`,
+    `booking_${event.params.bookingId}`,
+  );
+});
+
+// ---------- Chat ----------
+
+export const onMessageCreated = onDocumentCreated("conversations/{convId}/messages/{messageId}", async (event) => {
+  const m = event.data?.data();
+  if (!m) return;
+  const sender = await db.collection("users").doc(m.senderId).get();
+  const senderName = (sender.get("name") as string | undefined) ?? "Atleta";
+  const preview = String(m.text).slice(0, 100);
+
+  await notifyUser(m.receiverId, "CHAT", `💬 Nova mensagem de ${senderName}`, preview, `chat_${event.params.convId}`);
+});
+
+// ---------- Lembrete 24h antes ----------
+
+export const bookingReminders = onSchedule({ schedule: "every 15 minutes", timeZone: TIME_ZONE }, async () => {
+  const now = Date.now();
+  const snap = await db.collection("bookings")
+    .where("reminderSent", "==", false)
+    .where("startAt", "<=", Timestamp.fromMillis(now + 24 * 60 * 60 * 1000))
+    .get();
+
+  for (const doc of snap.docs) {
+    const b = doc.data();
+    const startAt = (b.startAt as Timestamp).toMillis();
+    // Jogos que já passaram ou cancelados só são marcados, sem notificar.
+    if (b.status === "CONFIRMED" && startAt > now) {
+      const sport = SPORTS[b.sport] ?? b.sport;
+      await notifyUser(
+        b.organizerId, "ALERT_24H", "⏰ Lembrete: jogo amanhã!",
+        `Faltam menos de 24h para o seu jogo de ${sport} na Quadra de Manaíra (${formatDate(b.date)} às ${b.startTime}). Prepare seu material!`,
+        `reminder_${doc.id}`,
+      );
+    }
+    await doc.ref.update({ reminderSent: true });
+  }
+  logger.info(`Lembretes processados: ${snap.size}`);
+});
+
+// ---------- Aniversários ----------
+
+export const birthdays = onSchedule({ schedule: "0 8 * * *", timeZone: TIME_ZONE }, async () => {
+  const today = new Intl.DateTimeFormat("pt-BR", { timeZone: TIME_ZONE, day: "2-digit", month: "2-digit" })
+    .format(new Date()); // "dd/MM"
+  const snap = await db.collection("users").where("birthDayMonth", "==", today).get();
+
+  for (const doc of snap.docs) {
+    const name = doc.get("name") as string;
+    const sport = SPORTS[doc.get("sport") as string] ?? "";
+    await notifyUser(
+      doc.id, "BIRTHDAY", "🎉 Feliz aniversário!",
+      `A comunidade da Quadra de Manaíra deseja um ótimo dia, ${name}!`,
+      `birthday_${doc.id}`,
+    );
+    await notifyAll(
+      "BIRTHDAY", "🎂 Aniversário na comunidade!",
+      `Hoje é aniversário de ${name}${sport ? ` (${sport})` : ""}! Dê os parabéns pelo chat.`,
+      `birthday_${doc.id}`,
+    );
+  }
+  logger.info(`Aniversariantes hoje (${today}): ${snap.size}`);
+});

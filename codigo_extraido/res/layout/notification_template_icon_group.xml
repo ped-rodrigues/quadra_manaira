@@ -1,0 +1,4 @@
+<FrameLayout xmlns:android="http://schemas.android.com/apk/res/android" android:id="@7F050038" android:layout_width="@7F03000C" android:layout_height="@7F03000B">
+  <ImageView android:id="@7F050037" android:layout_width="-1" android:layout_height="-1" android:layout_marginTop="@7F030009" android:layout_marginBottom="@7F030009" android:scaleType="7" android:layout_marginStart="@7F030009" android:layout_marginEnd="@7F030009"/>
+  <ImageView android:layout_gravity="0x00800055" android:id="@7F050049" android:visibility="2" android:layout_width="@7F03000F" android:layout_height="@7F03000F" android:layout_marginBottom="8.000000dip" android:scaleType="7" android:layout_marginEnd="8.000000dip"/>
+</FrameLayout>

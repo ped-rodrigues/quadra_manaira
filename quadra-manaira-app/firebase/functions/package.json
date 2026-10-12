@@ -9,6 +9,7 @@
   "scripts": {
     "build": "tsc",
     "deploy": "firebase deploy --only functions",
+    "seed": "node test/seed.mjs",
     "test:rules": "firebase emulators:exec --only firestore --project demo-quadra \"node --test test/rules.test.mjs\""
   },
   "dependencies": {

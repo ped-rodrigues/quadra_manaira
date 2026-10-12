@@ -56,10 +56,21 @@ targets:
       base:
         SWIFT_VERSION: "5.0"
         GENERATE_INFOPLIST_FILE: YES
+  # Passeio com fotos das telas; precisa do Firebase Emulator com `npm run seed` (o CI liga).
+  QuadraManairaUITests:
+    type: bundle.ui-testing
+    platform: iOS
+    sources: [QuadraManairaUITests]
+    dependencies:
+      - target: QuadraManaira
+    settings:
+      base:
+        SWIFT_VERSION: "5.0"
+        GENERATE_INFOPLIST_FILE: YES
 schemes:
   QuadraManaira:
     build:
       targets:
         QuadraManaira: all
     test:
-      targets: [QuadraManairaTests]
+      targets: [QuadraManairaTests, QuadraManairaUITests]

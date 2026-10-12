@@ -2,7 +2,7 @@
 name: iOS
 on:
   push:
-    paths: ["quadra-manaira-app/ios/**", ".github/workflows/ios.yml"]
+    paths: ["quadra-manaira-app/ios/**", "quadra-manaira-app/firebase/**", ".github/workflows/ios.yml"]
   workflow_dispatch:
 
 jobs:
@@ -14,13 +14,33 @@ jobs:
     steps:
       - uses: actions/checkout@v5
       - run: brew install xcodegen && xcodegen
+      - uses: actions/setup-java@v5
+        with: { distribution: temurin, java-version: 21 }
+      - uses: actions/setup-node@v5
+        with: { node-version: 22 }
+      - name: Firebase Emulator com dados de exemplo (para o passeio do teste de interface)
+        working-directory: quadra-manaira-app/firebase
+        run: |
+          npm i -g firebase-tools
+          (cd functions && npm ci)
+          firebase emulators:start --only auth,firestore --project demo-quadra > emulators.log 2>&1 &
+          for i in $(seq 90); do curl -s localhost:8080 > /dev/null && curl -s localhost:9099 > /dev/null && break; sleep 2; done
+          (cd functions && npm run seed)
       - name: Testes (simulador)
         run: |
           set -o pipefail
           SIM=$(xcrun simctl list devices available -j | python3 -c "import json,sys; d=json.load(sys.stdin)['devices']; print(next(x['udid'] for k in sorted(d, reverse=True) if 'iOS' in k for x in d[k] if 'iPhone' in x['name']))")
           xcodebuild test -project QuadraManaira.xcodeproj -scheme QuadraManaira -destination "id=$SIM" \
-            CODE_SIGNING_ALLOWED=NO | tee build.log | grep -E "error:|warning: .*\.swift|Test Case|TEST|BUILD" || true
+            -resultBundlePath TestResults.xcresult CODE_SIGNING_ALLOWED=NO | tee build.log | grep -E "error:|warning: .*\.swift|Test Case|TEST|BUILD" || true
           grep -q "TEST SUCCEEDED" build.log
+      - name: Fotos das telas
+        if: always()
+        run: xcrun xcresulttool export attachments --path TestResults.xcresult --output-path telas || true
+      - if: always()
+        uses: actions/upload-artifact@v4
+        with:
+          name: telas-ios
+          path: quadra-manaira-app/ios/telas
       - name: Build de release (sem assinatura)
         run: |
           set -o pipefail

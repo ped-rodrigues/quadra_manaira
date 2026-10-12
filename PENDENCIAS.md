@@ -10,7 +10,7 @@ Legenda de prioridade: 🔴 bloqueia o lançamento · 🟡 importante · 🟢 me
 
 - [x] Build do iOS no GitHub Actions ✅ 2026-10-12 (compila; ver seção 2 para o teste no simulador)
 - [x] Exigir e-mail confirmado ✅ 2026-10-12
-- [ ] 🟡 Abrir o PR do branch `app-nativo` para o `main` (o repositório é **público**)
+- [x] PR aberto: https://github.com/ped-rodrigues/quadra_manaira/pull/1 ✅ 2026-10-12 (falta revisar e fazer o merge)
 
 ## 1. Configuração do Firebase
 

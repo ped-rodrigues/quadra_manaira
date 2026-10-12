@@ -19,16 +19,16 @@ final class TourUITests: XCTestCase {
         password.typeText("quadra123")
         app.buttons["Entrar"].tap()
 
-        // Depois do login o iOS oferece guardar a senha e o app pede permissão de notificação.
-        let notNow = app.buttons["Not Now"]
-        if notNow.waitForExistence(timeout: 8) { notNow.tap() }
-        let alert = XCUIApplication(bundleIdentifier: "com.apple.springboard").alerts.firstMatch
-        if alert.waitForExistence(timeout: 10) { alert.buttons.element(boundBy: 1).tap() }
-
         let tabs = app.tabBars.firstMatch
         let entered = tabs.buttons["Agenda"].waitForExistence(timeout: 30)
         shot(app, "2-depois-do-login")
         XCTAssertTrue(entered)
+
+        // Depois do login o iOS oferece guardar a senha e o app pede permissão de notificação (chegam com atraso).
+        let notNow = app.buttons["Not Now"]
+        if notNow.waitForExistence(timeout: 10) { notNow.tap() }
+        let alert = XCUIApplication(bundleIdentifier: "com.apple.springboard").alerts.firstMatch
+        if alert.waitForExistence(timeout: 3) { alert.buttons.element(boundBy: 1).tap() }
         sleep(3) // clima e jogos chegando
         shot(app, "2b-agenda")
 
@@ -42,8 +42,9 @@ final class TourUITests: XCTestCase {
             tabs.buttons[tab].tap()
             sleep(2)
             shot(app, "\(i + 4)-\(tab.lowercased())")
-            if tab == "Conversas", app.staticTexts["Bia Souza"].exists {
-                app.staticTexts["Bia Souza"].tap()
+            let bia = app.staticTexts["Bia Souza"].firstMatch // aparece na conversa e na lista de atletas
+            if tab == "Conversas", bia.exists {
+                bia.tap()
                 sleep(2)
                 shot(app, "5b-conversa")
                 app.navigationBars.buttons.firstMatch.tap()

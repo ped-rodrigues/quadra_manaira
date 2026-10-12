@@ -222,17 +222,24 @@ private extension DocumentSnapshot {
     }
 }
 
+/// Mesma política do Firebase Auth (console → Authentication → Política de senha).
+func passwordError(_ p: String) -> String? {
+    let ok = p.count >= 8 && p.contains(where: { ("a"..."z").contains($0) }) && p.contains(where: { ("0"..."9").contains($0) })
+    return ok ? nil : "A senha precisa de 8 caracteres ou mais, com letra minúscula e número."
+}
+
 func friendly(_ error: Error) -> String {
     if let e = error as? UserError { return e.message }
     let ns = error as NSError
     if ns.domain == AuthErrorDomain, let code = AuthErrorCode(rawValue: ns.code) {
         switch code {
-        case .weakPassword: return "Senha fraca. Use pelo menos 6 caracteres."
+        case .weakPassword: return "A senha precisa de 8 caracteres ou mais, com letra minúscula e número."
         case .emailAlreadyInUse: return "Já existe uma conta com esse e-mail."
         case .userNotFound: return "Conta não encontrada. Toque em Criar conta."
         case .wrongPassword, .invalidCredential, .invalidEmail: return "E-mail ou senha incorretos."
         case .networkError: return "Sem internet. Confira a conexão e tente de novo."
         case .tooManyRequests: return "Muitas tentativas. Espere alguns minutos."
+        case .keychainError: return "Não foi possível guardar o login neste aparelho. Tente de novo."
         case .requiresRecentLogin: return "Por segurança, saia, entre de novo e repita a exclusão."
         default: break
         }
@@ -295,7 +302,7 @@ enum Repo {
     static func register(name: String, email: String, password: String, birth: String, sport: Sport, avatar: String) async throws {
         try checkProfile(name, birth)
         if !email.trimmed.contains("@") || !email.trimmed.contains(".") { throw UserError("E-mail inválido.") }
-        if password.count < 6 { throw UserError("A senha precisa ter pelo menos 6 caracteres.") }
+        if let e = passwordError(password) { throw UserError(e) }
         let user = try await auth.createUser(withEmail: email.trimmed, password: password).user
         try await writeProfile(uid: user.uid, email: user.email ?? "", name: name.trimmed, birth: birth.trimmed, sport: sport, avatar: avatar, isNew: true)
         try? await user.sendEmailVerification() // se falhar, a tela de confirmação reenvia

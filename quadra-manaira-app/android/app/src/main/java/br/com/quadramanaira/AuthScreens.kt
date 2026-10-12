@@ -161,7 +161,7 @@ private fun ColumnScope.RegisterForm(onBack: () -> Unit) {
     Text("Criar conta", style = MaterialTheme.typography.headlineSmall)
     OutlinedTextField(name, { name = it }, label = { Text("Nome") }, singleLine = true, modifier = Modifier.fillMaxWidth())
     EmailField(email) { email = it }
-    PasswordField("Senha (mínimo 6 caracteres)", password) { password = it }
+    PasswordField("Senha (8 ou mais, com minúscula e número)", password) { password = it }
     BirthField(birth) { birth = it }
     SportAndAvatar(sport, { sport = it }, avatar, { avatar = it })
     busy.error?.let { Text(it, color = MaterialTheme.colorScheme.error) }

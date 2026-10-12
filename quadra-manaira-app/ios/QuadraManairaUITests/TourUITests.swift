@@ -4,6 +4,7 @@ import XCTest
 /// Entra como Ana e fotografa cada tela; as fotos saem como anexos do resultado do teste.
 final class TourUITests: XCTestCase {
     func testTour() {
+        continueAfterFailure = false
         let app = XCUIApplication()
         app.launch()
 

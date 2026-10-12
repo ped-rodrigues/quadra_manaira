@@ -180,6 +180,10 @@ fun birthError(value: String, today: LocalDate): String? {
     return if (d.isAfter(today) || d.year < 1900) "Data de nascimento inválida." else null
 }
 
+/** Mesma política do Firebase Auth (console → Authentication → Política de senha). */
+fun passwordError(p: String): String? =
+    if (p.length < 8 || p.none { it in 'a'..'z' } || p.none { it in '0'..'9' }) "A senha precisa de 8 caracteres ou mais, com letra minúscula e número." else null
+
 private val PT = Locale.forLanguageTag("pt-BR")
 private val LONG_DATE = DateTimeFormatter.ofPattern("EEEE, d 'de' MMMM", PT)
 private val WEEKDAY = DateTimeFormatter.ofPattern("EEE", PT)
@@ -226,7 +230,7 @@ private fun DocumentSnapshot.toProfile() =
 fun Throwable.friendly(): String {
     generateSequence(this) { it.cause }.firstOrNull { it is UserError }?.let { return it.message.orEmpty() }
     return when (this) {
-        is FirebaseAuthWeakPasswordException -> "Senha fraca. Use pelo menos 6 caracteres."
+        is FirebaseAuthWeakPasswordException -> "A senha precisa de 8 caracteres ou mais, com letra minúscula e número."
         is FirebaseAuthUserCollisionException -> "Já existe uma conta com esse e-mail."
         is FirebaseAuthInvalidUserException -> "Conta não encontrada. Toque em Criar conta."
         is FirebaseAuthInvalidCredentialsException -> "E-mail ou senha incorretos."
@@ -287,7 +291,7 @@ object Repo {
     suspend fun register(name: String, email: String, password: String, birth: String, sport: Sport, avatar: String) {
         checkProfile(name, birth)
         if (!Patterns.EMAIL_ADDRESS.matcher(email.trim()).matches()) throw UserError("E-mail inválido.")
-        if (password.length < 6) throw UserError("A senha precisa ter pelo menos 6 caracteres.")
+        passwordError(password)?.let { throw UserError(it) }
         val user = auth.createUserWithEmailAndPassword(email.trim(), password).await().user
             ?: throw UserError("Não foi possível criar a conta.")
         // Criada a conta, a sessão troca de tela e cancela quem chamou; o resto do cadastro não pode parar no meio.

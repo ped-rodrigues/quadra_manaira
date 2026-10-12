@@ -24,6 +24,8 @@ targets:
       path: QuadraManaira/QuadraManaira.entitlements
       properties:
         aps-environment: development
+        # O Firebase Auth guarda o login no keychain; sem esse grupo o simulador recusa (erro -34018).
+        keychain-access-groups: ["$(AppIdentifierPrefix)br.com.quadramanaira"]
     info:
       path: QuadraManaira/Info.plist
       properties:

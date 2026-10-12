@@ -38,4 +38,11 @@ class LogicTest {
         assertNotNull(birthError("12/10/2026", today)) // futuro
         assertNotNull(birthError("1/2/2000", today))
     }
+
+    @Test fun senha() {
+        assertNull(passwordError("quadra123"))
+        assertNotNull(passwordError("quadra1")) // curta
+        assertNotNull(passwordError("quadraquadra")) // sem número
+        assertNotNull(passwordError("QUADRA123")) // sem minúscula
+    }
 }

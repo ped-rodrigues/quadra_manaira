@@ -42,4 +42,11 @@ final class LogicTests: XCTestCase {
         XCTAssertFalse(fitsSlot(day: day, start: 17 * 60 + 30, duration: 60, bookings: ocupado, now: before))
         XCTAssertFalse(fitsSlot(day: day, start: 21 * 60 + 30, duration: 60, bookings: [], now: before))
     }
+
+    func testSenha() {
+        XCTAssertNil(passwordError("quadra123"))
+        XCTAssertNotNil(passwordError("quadra1")) // curta
+        XCTAssertNotNil(passwordError("quadraquadra")) // sem número
+        XCTAssertNotNil(passwordError("QUADRA123")) // sem minúscula
+    }
 }

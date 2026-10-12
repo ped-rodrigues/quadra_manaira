@@ -140,7 +140,7 @@ private struct RegisterForm: View {
             TextField("voce@email.com", text: $email).keyboardType(.emailAddress).textContentType(.username)
                 .textInputAutocapitalization(.never).autocorrectionDisabled().field()
         }
-        Labeled(label: "Senha (mínimo 6 caracteres)") { SecureField("Crie uma senha", text: $password).textContentType(.newPassword).field() }
+        Labeled(label: "Senha (8 ou mais, com minúscula e número)") { SecureField("Crie uma senha", text: $password).textContentType(.newPassword).field() }
         BirthField(text: $birth)
         SportAndAvatar(sport: $sport, avatar: $avatar)
         ErrorText(text: busy.error)

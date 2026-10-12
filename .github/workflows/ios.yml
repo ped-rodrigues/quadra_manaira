@@ -36,7 +36,10 @@ jobs:
           grep -q "TEST SUCCEEDED" build.log
       - name: Fotos das telas
         if: always()
-        run: xcrun xcresulttool export attachments --path TestResults.xcresult --output-path telas || true
+        run: |
+          xcrun xcresulttool export attachments --path TestResults.xcresult --output-path telas || true
+          xcrun simctl spawn booted log show --last 15m --style compact --predicate 'process == "QuadraManaira"' > telas/app.log 2>&1 || true
+          cp ../firebase/emulators.log ../firebase/firestore-debug.log telas/ 2>/dev/null || true
       - if: always()
         uses: actions/upload-artifact@v4
         with:

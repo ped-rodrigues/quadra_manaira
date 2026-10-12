@@ -6,6 +6,7 @@ final class TourUITests: XCTestCase {
     func testTour() {
         continueAfterFailure = false
         let app = XCUIApplication()
+        app.launchArguments = ["-FIRDebugEnabled"] // logs do Firebase no log do simulador (o CI guarda)
         app.launch()
 
         let email = app.textFields["voce@email.com"]
@@ -25,9 +26,11 @@ final class TourUITests: XCTestCase {
         if alert.waitForExistence(timeout: 10) { alert.buttons.element(boundBy: 1).tap() }
 
         let tabs = app.tabBars.firstMatch
-        XCTAssertTrue(tabs.buttons["Agenda"].waitForExistence(timeout: 30))
+        let entered = tabs.buttons["Agenda"].waitForExistence(timeout: 30)
+        shot(app, "2-depois-do-login")
+        XCTAssertTrue(entered)
         sleep(3) // clima e jogos chegando
-        shot(app, "2-agenda")
+        shot(app, "2b-agenda")
 
         app.buttons["Agendar"].tap()
         sleep(1)

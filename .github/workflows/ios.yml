@@ -1,0 +1,33 @@
+# Compila o app iOS e roda os testes num Mac do GitHub (no Windows não dá para compilar iOS).
+name: iOS
+on:
+  push:
+    paths: ["quadra-manaira-app/ios/**", ".github/workflows/ios.yml"]
+  workflow_dispatch:
+
+jobs:
+  build:
+    runs-on: macos-26
+    defaults:
+      run:
+        working-directory: quadra-manaira-app/ios
+    steps:
+      - uses: actions/checkout@v5
+      - run: brew install xcodegen && xcodegen
+      - name: Testes (simulador)
+        run: |
+          set -o pipefail
+          SIM=$(xcrun simctl list devices available -j | python3 -c "import json,sys; d=json.load(sys.stdin)['devices']; print(next(x['udid'] for k in sorted(d, reverse=True) if 'iOS' in k for x in d[k] if 'iPhone' in x['name']))")
+          xcodebuild test -project QuadraManaira.xcodeproj -scheme QuadraManaira -destination "id=$SIM" \
+            CODE_SIGNING_ALLOWED=NO | tee build.log | grep -E "error:|warning: .*\.swift|Test Case|TEST|BUILD" || true
+          grep -q "TEST SUCCEEDED" build.log
+      - name: Build de release (sem assinatura)
+        run: |
+          set -o pipefail
+          xcodebuild build -project QuadraManaira.xcodeproj -scheme QuadraManaira -configuration Release \
+            -destination "generic/platform=iOS" CODE_SIGNING_ALLOWED=NO | grep -E "error:|BUILD" 
+      - if: failure()
+        uses: actions/upload-artifact@v4
+        with:
+          name: build-log
+          path: quadra-manaira-app/ios/build.log

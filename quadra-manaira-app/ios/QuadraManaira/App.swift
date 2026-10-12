@@ -37,7 +37,11 @@ final class AppDelegate: NSObject, UIApplicationDelegate, MessagingDelegate, UNU
             FirebaseApp.configure(options: options)
             // 127.0.0.1 e não localhost: o gRPC do Firestore tenta o IPv6 (::1) e o emulador só escuta IPv4.
             Auth.auth().useEmulator(withHost: "127.0.0.1", port: 9099)
-            Firestore.firestore().useEmulator(withHost: "127.0.0.1", port: 8080)
+            // TLS desligado à mão: no SDK 13 o useEmulator do Firestore não desliga, e o emulador recusa a conexão.
+            let settings = Firestore.firestore().settings
+            settings.host = "127.0.0.1:8080"
+            settings.isSSLEnabled = false
+            Firestore.firestore().settings = settings
             Self.configured = true
             #endif
         }

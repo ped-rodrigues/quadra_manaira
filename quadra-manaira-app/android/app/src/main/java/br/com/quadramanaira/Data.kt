@@ -15,6 +15,7 @@ import com.google.android.libraries.identity.googleid.GetSignInWithGoogleOption
 import com.google.android.libraries.identity.googleid.GoogleIdTokenCredential
 import com.google.android.gms.tasks.Task
 import com.google.firebase.FirebaseNetworkException
+import com.google.firebase.FirebaseTooManyRequestsException
 import com.google.firebase.Timestamp
 import com.google.firebase.auth.FirebaseAuth
 import com.google.firebase.auth.FirebaseAuthInvalidCredentialsException
@@ -112,6 +113,8 @@ data class Weather(val tempC: Int, val windKmh: Int, val condition: String, val 
 sealed interface Session {
     data object Loading : Session
     data object SignedOut : Session
+    /** Cadastro por e-mail ainda não confirmado: as regras só deixam mexer no próprio perfil. */
+    data class Unverified(val email: String) : Session
     /** Logado sem perfil completo (primeiro login com Google ou cadastro interrompido). */
     data class NeedsProfile(val uid: String, val partial: Profile?) : Session
     data class Ready(val me: Profile) : Session
@@ -227,6 +230,7 @@ fun Throwable.friendly(): String {
         is FirebaseAuthInvalidUserException -> "Conta não encontrada. Toque em Criar conta."
         is FirebaseAuthInvalidCredentialsException -> "E-mail ou senha incorretos."
         is FirebaseNetworkException -> "Sem internet. Confira a conexão e tente de novo."
+        is FirebaseTooManyRequestsException -> "Muitas tentativas. Espere alguns minutos."
         is GetCredentialCancellationException -> "Login cancelado."
         is NoCredentialException -> "Nenhuma conta Google neste aparelho."
         is FirebaseFirestoreException -> when (code) {
@@ -256,11 +260,13 @@ object Repo {
 
     @OptIn(ExperimentalCoroutinesApi::class)
     fun session(): Flow<Session> = callbackFlow {
-        val listener = FirebaseAuth.AuthStateListener { trySend(it.currentUser?.uid) }
-        auth.addAuthStateListener(listener)
-        awaitClose { auth.removeAuthStateListener(listener) }
-    }.distinctUntilChanged().flatMapLatest { uid ->
-        if (uid == null) flowOf(Session.SignedOut)
+        // Ouve o token, não só o login: é ele que muda quando o e-mail é confirmado (checkVerified).
+        val listener = FirebaseAuth.IdTokenListener { a -> trySend(a.currentUser?.let { it.uid to it.isEmailVerified }) }
+        auth.addIdTokenListener(listener)
+        awaitClose { auth.removeIdTokenListener(listener) }
+    }.distinctUntilChanged().flatMapLatest { user ->
+        val (uid, verified) = user ?: return@flatMapLatest flowOf(Session.SignedOut)
+        if (!verified) flowOf(Session.Unverified(auth.currentUser?.email.orEmpty()))
         else combine(users.document(uid).flow(), privateDoc(uid).flow()) { pub, priv ->
             @Suppress("UNCHECKED_CAST")
             val me = if (!pub.exists()) null else pub.toProfile().copy(
@@ -284,6 +290,19 @@ object Repo {
         val user = auth.createUserWithEmailAndPassword(email.trim(), password).await().user
             ?: throw UserError("Não foi possível criar a conta.")
         writeProfile(user.uid, user.email.orEmpty(), name.trim(), birth.trim(), sport, avatar, isNew = true)
+        runCatching { user.sendEmailVerification().await() } // se falhar, a tela de confirmação reenvia
+    }
+
+    suspend fun resendVerification() {
+        auth.currentUser?.sendEmailVerification()?.await()
+    }
+
+    /** Recarrega a conta; confirmada, renova o token (as regras leem email_verified dele) e a sessão avança. */
+    suspend fun checkVerified() {
+        val user = auth.currentUser ?: return
+        user.reload().await()
+        if (!user.isEmailVerified) throw UserError("Ainda não confirmado. Abra o link do e-mail e tente de novo.")
+        user.getIdToken(true).await()
     }
 
     suspend fun resetPassword(email: String) {

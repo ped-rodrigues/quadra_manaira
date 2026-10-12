@@ -7,6 +7,9 @@ service cloud.firestore {
 
     function signedIn() { return request.auth != null; }
     function isUser(uid) { return signedIn() && request.auth.uid == uid; }
+    // Comunidade (ler e escrever fora do próprio perfil) só com e-mail confirmado. Google já vem confirmado.
+    // O dono mexe no próprio perfil antes disso, porque o cadastro grava o perfil e só depois confirma.
+    function verified() { return signedIn() && request.auth.token.email_verified == true; }
     function data() { return request.resource.data; }
 
     function validSport(s) { return s in ['FUTEBOL', 'BASQUETE', 'VOLEI_PRAIA', 'GINASTICA']; }
@@ -36,9 +39,9 @@ service cloud.firestore {
     }
 
     // ---------- Usuários ----------
-    // users/{uid} é visível para quem está logado: só nome, avatar, esporte e dia/mês do aniversário.
+    // users/{uid} é visível para quem confirmou o e-mail: só nome, avatar, esporte e dia/mês do aniversário.
     match /users/{uid} {
-      allow read: if signedIn();
+      allow read: if verified();
       allow create, update: if isUser(uid)
         && data().keys().hasOnly(['name', 'nameLower', 'birthDayMonth', 'sport', 'avatar', 'createdAt'])
         && text(data().name, 2, 60)
@@ -78,10 +81,10 @@ service cloud.firestore {
 
     // ---------- Agenda ----------
     match /bookings/{bookingId} {
-      allow read: if signedIn();
+      allow read: if verified();
 
       // Em nome próprio, até 3 h, e só se TODOS os blocos de 30 min foram reservados na mesma transação.
-      allow create: if signedIn()
+      allow create: if verified()
         && data().keys().hasOnly(['date', 'startTime', 'endTime', 'startAt', 'sport', 'organizerId', 'organizerName', 'notes', 'status', 'reminderSent', 'createdAt'])
         && data().organizerId == request.auth.uid
         && data().organizerName == get(/databases/$(database)/documents/users/$(request.auth.uid)).data.name
@@ -98,7 +101,7 @@ service cloud.firestore {
         && slotCovered(data(), bookingId, 4) && slotCovered(data(), bookingId, 5);
 
       // Só o organizador cancela, e cancelar é a única mudança possível.
-      allow update: if signedIn()
+      allow update: if verified()
         && resource.data.organizerId == request.auth.uid
         && data().diff(resource.data).affectedKeys().hasOnly(['status'])
         && data().status == 'CANCELLED';
@@ -117,14 +120,14 @@ service cloud.firestore {
           && validTime(time) && minutes(time) >= minutes(b.startTime) && minutes(time) < minutes(b.endTime);
       }
 
-      allow read: if signedIn();
-      allow create: if signedIn()
+      allow read: if verified();
+      allow create: if verified()
         && data().keys().hasOnly(['bookingId', 'organizerId', 'date'])
         && data().organizerId == request.auth.uid
         && slotId.matches('^\\d{4}-\\d{2}-\\d{2}_\\d{2}:\\d{2}$')
         && inBooking(getAfter(/databases/$(database)/documents/bookings/$(data().bookingId)).data);
       allow update: if false;
-      allow delete: if signedIn() && resource.data.organizerId == request.auth.uid;
+      allow delete: if verified() && resource.data.organizerId == request.auth.uid;
     }
 
     // ---------- Mural ----------
@@ -132,41 +135,41 @@ service cloud.firestore {
       function liked() { return exists(/databases/$(database)/documents/posts/$(postId)/likes/$(request.auth.uid)); }
       function likedAfter() { return existsAfter(/databases/$(database)/documents/posts/$(postId)/likes/$(request.auth.uid)); }
 
-      allow read: if signedIn();
-      allow create: if signedIn()
+      allow read: if verified();
+      allow create: if verified()
         && data().keys().hasOnly(['authorId', 'authorName', 'authorAvatar', 'sport', 'text', 'likesCount', 'createdAt'])
         && data().authorId == request.auth.uid
         && data().authorName == get(/databases/$(database)/documents/users/$(request.auth.uid)).data.name
         && validSport(data().sport)
         && data().likesCount == 0
         && text(data().text, 1, 1000);
-      allow delete: if signedIn() && resource.data.authorId == request.auth.uid;
+      allow delete: if verified() && resource.data.authorId == request.auth.uid;
 
       // Única mudança: +1/-1 no contador junto com criar/apagar a própria curtida.
-      allow update: if signedIn()
+      allow update: if verified()
         && data().diff(resource.data).affectedKeys().hasOnly(['likesCount'])
         && ((data().likesCount == resource.data.likesCount + 1 && !liked() && likedAfter())
           || (data().likesCount == resource.data.likesCount - 1 && liked() && !likedAfter()));
 
       match /likes/{uid} {
-        allow read: if signedIn();
-        allow create: if isUser(uid) && data().keys().hasOnly(['uid', 'createdAt']) && data().uid == uid
+        allow read: if verified();
+        allow create: if verified() && isUser(uid) && data().keys().hasOnly(['uid', 'createdAt']) && data().uid == uid
           && getAfter(/databases/$(database)/documents/posts/$(postId)).data.likesCount == get(/databases/$(database)/documents/posts/$(postId)).data.likesCount + 1;
-        allow delete: if isUser(uid)
+        allow delete: if verified() && isUser(uid)
           && getAfter(/databases/$(database)/documents/posts/$(postId)).data.likesCount == get(/databases/$(database)/documents/posts/$(postId)).data.likesCount - 1;
       }
     }
 
     // Consulta "minhas curtidas" (collection group).
     match /{path=**}/likes/{uid} {
-      allow read: if signedIn();
+      allow read: if verified();
     }
 
     // ---------- Conversas ----------
     // O id é "uidA_uidB" (ordenado), então os participantes saem do próprio id.
     match /conversations/{convId} {
       function ids() { return convId.split('_'); }
-      function isParticipant() { return signedIn() && request.auth.uid in ids(); }
+      function isParticipant() { return verified() && request.auth.uid in ids(); }
       function otherId() { return ids()[0] == request.auth.uid ? ids()[1] : ids()[0]; }
       function nameOf(uid) { return get(/databases/$(database)/documents/users/$(uid)).data.name; }
 
@@ -197,7 +200,7 @@ service cloud.firestore {
       }
 
       allow get: if isParticipant();
-      allow list: if signedIn() && request.auth.uid in resource.data.participants;
+      allow list: if verified() && request.auth.uid in resource.data.participants;
       allow create: if validConversation({}, {});
       allow update: if validConversation(resource.data.get('names', {}), resource.data.get('unread', {}));
       allow delete: if false;
@@ -217,7 +220,7 @@ service cloud.firestore {
     // ---------- Denúncias ----------
     // Qualquer pessoa logada denuncia; só a administração lê, pelo console do Firebase.
     match /reports/{reportId} {
-      allow create: if signedIn()
+      allow create: if verified()
         && data().keys().hasOnly(['reporterId', 'type', 'targetId', 'targetUserId', 'text', 'createdAt'])
         && data().reporterId == request.auth.uid
         && data().type in ['POST', 'CHAT']

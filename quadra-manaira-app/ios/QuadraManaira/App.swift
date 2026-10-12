@@ -33,7 +33,7 @@ final class AppDelegate: NSObject, UIApplicationDelegate, MessagingDelegate, UNU
             // No release sem config o Firebase não sobe e o app mostra a tela de configuração (falha fechada).
             let options = FirebaseOptions(googleAppID: "1:000000000000:ios:0000000000000000", gcmSenderID: "000000000000")
             options.projectID = "demo-quadra"
-            options.apiKey = "demo-key"
+            options.apiKey = "A" + String(repeating: "0", count: 38) // o SDK exige o formato de chave real (39 caracteres)
             FirebaseApp.configure(options: options)
             Auth.auth().useEmulator(withHost: "localhost", port: 9099)
             Firestore.firestore().useEmulator(withHost: "localhost", port: 8080)
@@ -72,6 +72,7 @@ struct RootView: View {
             switch session {
             case .loading: ProgressView().frame(maxWidth: .infinity, maxHeight: .infinity)
             case .signedOut: AuthView()
+            case .unverified(let email): VerifyEmailView(email: email)
             case .needsProfile(let partial): CompleteProfileView(partial: partial)
             case .ready(let me): HomeView(me: me)
             }
@@ -85,8 +86,9 @@ struct RootView: View {
         switch session {
         case .loading: 0
         case .signedOut: 1
-        case .needsProfile: 2
-        case .ready: 3
+        case .unverified: 2
+        case .needsProfile: 3
+        case .ready: 4
         }
     }
 }

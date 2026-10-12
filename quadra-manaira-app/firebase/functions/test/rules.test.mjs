@@ -27,7 +27,7 @@ beforeEach(async () => {
   });
 });
 
-const as = (uid) => env.authenticatedContext(uid, { email: `${uid}@x.com` }).firestore();
+const as = (uid, email_verified = true) => env.authenticatedContext(uid, { email: `${uid}@x.com`, email_verified }).firestore();
 const profile = (name = "Ana") => ({ name, nameLower: name.toLowerCase(), birthDayMonth: "01/02", sport: "BASQUETE", avatar: "🏀" });
 
 /** Agendamento + blocos num lote só, como o app faz. */
@@ -46,6 +46,17 @@ test("perfil: só o dono escreve, com campos válidos", async () => {
   await assertFails(setDoc(doc(as(ANA), `users/${BIA}`), profile("Bia")));
   await assertFails(setDoc(doc(as(ANA), `users/${ANA}`), { ...profile(), avatar: "💀" }));
   await assertFails(setDoc(doc(as(ANA), `users/${ANA}`), { ...profile(), admin: true }));
+});
+
+test("e-mail não confirmado: só mexe no próprio perfil", async () => {
+  const novo = as(ANA, false);
+  await assertSucceeds(setDoc(doc(novo, `users/${ANA}`), profile()));
+  await assertSucceeds(setDoc(doc(novo, `users/${ANA}/private/data`), { email: `${ANA}@x.com`, birthDate: "01/02/2000" }));
+  await assertFails(getDoc(doc(novo, `users/${BIA}`)));
+  await assertFails(getDoc(doc(novo, "posts/p1")));
+  await assertFails(addDoc(collection(novo, "posts"), { authorId: ANA, authorName: "Ana", authorAvatar: "⚽", sport: "FUTEBOL", text: "spam", likesCount: 0, createdAt: serverTimestamp() }));
+  await assertFails(book(novo, "b1", "18:00", "19:00", ["18:00", "18:30"]));
+  await assertFails(addDoc(collection(novo, "reports"), { reporterId: ANA, type: "POST", targetId: "p1", targetUserId: BIA, text: "", createdAt: serverTimestamp() }));
 });
 
 test("dados privados: só o dono lê, e o e-mail tem de ser o do login", async () => {

@@ -161,6 +161,34 @@ struct SportAndAvatar: View {
 }
 
 /// Cadastro interrompido: pede o que falta antes de entrar.
+/// Volta do app de e-mail já confere sozinho; o botão é para quem confirmou em outro aparelho.
+struct VerifyEmailView: View {
+    let email: String
+    @State private var busy = Busy()
+    @State private var resent = false
+    @Environment(\.scenePhase) private var phase
+
+    var body: some View {
+        ScrollView {
+            VStack(alignment: .leading, spacing: 14) {
+                Text("Confirme seu e-mail").font(.placar(34))
+                Text("Mandamos um link para \(email). Toque nele e volte para o app. Não chegou? Olhe o spam.")
+                ErrorText(text: busy.error)
+                if resent { Text("Link reenviado.") }
+                BigButton(title: "Já confirmei", busy: busy.running) { busy.run { try await Repo.checkVerified() } }
+                Button("Reenviar link") { busy.run { try await Repo.resendVerification(); resent = true } }
+                    .disabled(busy.running)
+                Button("Sair") { Task { await Repo.logout() } }
+            }
+            .padding(20)
+        }
+        .background(Palette.concreto)
+        .onChange(of: phase) { _, p in
+            if p == .active { Task { try? await Repo.checkVerified() } }
+        }
+    }
+}
+
 struct CompleteProfileView: View {
     let partial: Profile?
     var body: some View {

@@ -79,6 +79,8 @@ struct Weather {
 
 enum Session: Equatable {
     case loading, signedOut
+    /// Cadastro por e-mail ainda não confirmado: as regras só deixam mexer no próprio perfil.
+    case unverified(String)
     /// Logado sem perfil completo (cadastro interrompido).
     case needsProfile(Profile?)
     case ready(Profile)
@@ -230,6 +232,7 @@ func friendly(_ error: Error) -> String {
         case .userNotFound: return "Conta não encontrada. Toque em Criar conta."
         case .wrongPassword, .invalidCredential, .invalidEmail: return "E-mail ou senha incorretos."
         case .networkError: return "Sem internet. Confira a conexão e tente de novo."
+        case .tooManyRequests: return "Muitas tentativas. Espere alguns minutos."
         case .requiresRecentLogin: return "Por segurança, saia, entre de novo e repita a exclusão."
         default: break
         }
@@ -254,10 +257,16 @@ enum Repo {
     static func session() -> AsyncStream<Session> {
         AsyncStream { c in
             var regs: [ListenerRegistration] = []
-            let authHandle = auth.addStateDidChangeListener { _, user in
+            var key = "?"
+            // Ouve o token, não só o login: é ele que muda quando o e-mail é confirmado (checkVerified).
+            let authHandle = auth.addIDTokenDidChangeListener { _, user in
+                let newKey = user.map { "\($0.uid)|\($0.isEmailVerified)" } ?? ""
+                guard newKey != key else { return } // renovação de hora em hora: nada mudou
+                key = newKey
                 regs.forEach { $0.remove() }
                 regs = []
                 guard let user else { c.yield(.signedOut); return }
+                guard user.isEmailVerified else { c.yield(.unverified(user.email ?? "")); return }
                 var pub: DocumentSnapshot?, priv: DocumentSnapshot?
                 func emit() {
                     guard let pub, let priv else { return }
@@ -272,7 +281,7 @@ enum Repo {
                 regs.append(privateDoc(user.uid).addSnapshotListener { s, _ in priv = s ?? priv; emit() })
             }
             c.onTermination = { _ in
-                Auth.auth().removeStateDidChangeListener(authHandle)
+                Auth.auth().removeIDTokenDidChangeListener(authHandle)
                 regs.forEach { $0.remove() }
             }
         }
@@ -289,6 +298,21 @@ enum Repo {
         if password.count < 6 { throw UserError("A senha precisa ter pelo menos 6 caracteres.") }
         let user = try await auth.createUser(withEmail: email.trimmed, password: password).user
         try await writeProfile(uid: user.uid, email: user.email ?? "", name: name.trimmed, birth: birth.trimmed, sport: sport, avatar: avatar, isNew: true)
+        try? await user.sendEmailVerification() // se falhar, a tela de confirmação reenvia
+    }
+
+    static func resendVerification() async throws {
+        try await auth.currentUser?.sendEmailVerification()
+    }
+
+    /// Recarrega a conta; confirmada, renova o token (as regras leem email_verified dele) e a sessão avança.
+    static func checkVerified() async throws {
+        guard let user = auth.currentUser else { return }
+        try await user.reload()
+        guard auth.currentUser?.isEmailVerified == true else {
+            throw UserError("Ainda não confirmado. Abra o link do e-mail e tente de novo.")
+        }
+        _ = try await user.getIDTokenResult(forcingRefresh: true)
     }
 
     static func resetPassword(_ email: String) async throws {
@@ -305,7 +329,7 @@ enum Repo {
     static func deleteAccount() async throws {
         guard let user = auth.currentUser else { throw UserError("Entre na sua conta.") }
         try await user.delete()
-        try? await Messaging.messaging().deleteToken()
+        try? await Messaging.messaging().unregister()
         prefs.removeObject(forKey: "token")
     }
 

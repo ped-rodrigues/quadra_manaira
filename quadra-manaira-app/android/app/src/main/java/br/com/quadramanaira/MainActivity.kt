@@ -71,6 +71,7 @@ private fun Root() {
         when (s) {
             Session.Loading -> Loading()
             Session.SignedOut -> AuthScreen()
+            is Session.Unverified -> VerifyEmailScreen(s.email)
             is Session.NeedsProfile -> CompleteProfileScreen(s.partial)
             is Session.Ready -> Home(s.me)
         }

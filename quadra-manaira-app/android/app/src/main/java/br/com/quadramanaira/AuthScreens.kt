@@ -53,6 +53,7 @@ import androidx.compose.ui.text.input.TextFieldValue
 import androidx.compose.ui.text.input.PasswordVisualTransformation
 import androidx.compose.ui.text.input.VisualTransformation
 import androidx.compose.ui.unit.dp
+import androidx.lifecycle.compose.LifecycleResumeEffect
 import kotlinx.coroutines.launch
 
 /** Roda uma ação suspensa mostrando "ocupado" e devolvendo o erro já traduzido. */
@@ -172,6 +173,34 @@ private fun ColumnScope.RegisterForm(onBack: () -> Unit) {
 }
 
 /** Primeiro login com Google: só falta o nascimento (e talvez o nome). */
+/** Volta do app de e-mail já confere sozinho; o botão é para quem confirmou em outro aparelho. */
+@Composable
+fun VerifyEmailScreen(email: String) {
+    val scope = rememberCoroutineScope()
+    val busy = rememberBusy()
+    var resent by remember { mutableStateOf(false) }
+    LifecycleResumeEffect(Unit) {
+        val job = scope.launch { runCatching { Repo.checkVerified() } }
+        onPauseOrDispose { job.cancel() }
+    }
+    Column(
+        Modifier.verticalScroll(rememberScrollState()).safeDrawingPadding().padding(20.dp),
+        verticalArrangement = Arrangement.spacedBy(12.dp),
+    ) {
+        Text("Confirme seu e-mail", style = MaterialTheme.typography.headlineMedium)
+        Text("Mandamos um link para $email. Toque nele e volte para o app. Não chegou? Olhe o spam.")
+        busy.error?.let { Text(it, color = MaterialTheme.colorScheme.error) }
+        if (resent) Text("Link reenviado.")
+        Button(onClick = { scope.act(busy) { Repo.checkVerified() } }, enabled = !busy.running, modifier = Modifier.fillMaxWidth()) {
+            Text("Já confirmei")
+        }
+        OutlinedButton(onClick = { scope.act(busy) { Repo.resendVerification(); resent = true } }, enabled = !busy.running, modifier = Modifier.fillMaxWidth()) {
+            Text("Reenviar link")
+        }
+        TextButton(onClick = { scope.launch { Repo.logout() } }) { Text("Sair") }
+    }
+}
+
 @Composable
 fun CompleteProfileScreen(partial: Profile?) {
     val scope = rememberCoroutineScope()

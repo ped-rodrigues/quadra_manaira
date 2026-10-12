@@ -1,143 +1,126 @@
-// Testes das regras do Firestore. Rodar com: npm run test:rules (sobe o emulador; precisa de Java).
+// Testes das regras do Firestore no emulador: `npm run test:rules` (precisa de Java 11+ no PATH).
 import { readFileSync } from "node:fs";
-import { after, beforeEach, test } from "node:test";
+import { after, before, beforeEach, test } from "node:test";
 import { assertFails, assertSucceeds, initializeTestEnvironment } from "@firebase/rules-unit-testing";
-import { doc, getDoc, increment, setDoc, updateDoc, writeBatch } from "firebase/firestore";
+import { doc, getDoc, increment, serverTimestamp, setDoc, Timestamp, updateDoc, writeBatch, addDoc, collection } from "firebase/firestore";
 
-const env = await initializeTestEnvironment({
-  projectId: "quadra-rules-test",
-  firestore: { rules: readFileSync(new URL("../../firestore.rules", import.meta.url), "utf8") },
+const ANA = "ana0000000000000000000000001";
+const BIA = "bia0000000000000000000000002";
+let env;
+
+before(async () => {
+  env = await initializeTestEnvironment({
+    projectId: "demo-quadra",
+    firestore: { rules: readFileSync(new URL("../../firestore.rules", import.meta.url), "utf8") },
+  });
 });
 after(() => env.cleanup());
-
-const A = "alice", B = "bob";
-const db = (uid) => env.authenticatedContext(uid, { email: `${uid}@x.com` }).firestore();
-const profile = (name) => ({ name, nameLower: name.toLowerCase(), birthDayMonth: "01/02", sport: "FUTEBOL", avatar: "⚽" });
 
 beforeEach(async () => {
   await env.clearFirestore();
   await env.withSecurityRulesDisabled(async (ctx) => {
-    const f = ctx.firestore();
-    await setDoc(doc(f, "users", A), profile("Alice"));
-    await setDoc(doc(f, "users", B), profile("Bob"));
-    await setDoc(doc(f, "users", A, "private", "data"), { email: "alice@x.com", birthDate: "01/02/1990", blocked: [] });
+    const db = ctx.firestore();
+    for (const [uid, name] of [[ANA, "Ana"], [BIA, "Bia"]]) {
+      await setDoc(doc(db, `users/${uid}`), { name, nameLower: name.toLowerCase(), birthDayMonth: "", sport: "FUTEBOL", avatar: "⚽" });
+    }
+    await setDoc(doc(db, "posts/p1"), { authorId: BIA, authorName: "Bia", authorAvatar: "⚽", sport: "FUTEBOL", text: "oi", likesCount: 0 });
   });
 });
 
-// ---------- Usuários ----------
+const as = (uid) => env.authenticatedContext(uid, { email: `${uid}@x.com` }).firestore();
+const profile = (name = "Ana") => ({ name, nameLower: name.toLowerCase(), birthDayMonth: "01/02", sport: "BASQUETE", avatar: "🏀" });
 
-test("perfil público não aceita e-mail nem nascimento completo", async () => {
-  await assertFails(setDoc(doc(db(A), "users", A), { ...profile("Alice"), email: "alice@x.com" }));
-  await assertSucceeds(setDoc(doc(db(A), "users", A), profile("Alice Silva")));
-});
-
-test("dados privados: só o dono lê e grava, com o próprio e-mail", async () => {
-  await assertSucceeds(getDoc(doc(db(A), "users", A, "private", "data")));
-  await assertFails(getDoc(doc(db(B), "users", A, "private", "data")));
-  await assertFails(setDoc(doc(db(B), "users", B, "private", "data"), { email: "outro@x.com", birthDate: "" }));
-  await assertSucceeds(setDoc(doc(db(B), "users", B, "private", "data"), { email: "bob@x.com", birthDate: "" }));
-});
-
-// ---------- Agendamentos ----------
-
-function booking(f, id, uid, start, end, slots, date = "2030-01-10") {
-  const b = writeBatch(f);
-  b.set(doc(f, "bookings", id), {
-    date, startTime: start, endTime: end, sport: "FUTEBOL", organizerId: uid, organizerName: "X",
-    notes: "", status: "CONFIRMED", reminderSent: false,
+/** Agendamento + blocos num lote só, como o app faz. */
+function book(db, id, start, end, slots, extra = {}) {
+  const b = writeBatch(db);
+  b.set(doc(db, `bookings/${id}`), {
+    date: "2030-01-10", startTime: start, endTime: end, startAt: Timestamp.now(), sport: "FUTEBOL",
+    organizerId: ANA, organizerName: "Ana", notes: "", status: "CONFIRMED", reminderSent: false, createdAt: serverTimestamp(), ...extra,
   });
-  for (const s of slots) b.set(doc(f, "slots", s), { bookingId: id, organizerId: uid, date: s.split("_")[0] });
+  for (const s of slots) b.set(doc(db, `slots/2030-01-10_${s}`), { bookingId: id, organizerId: ANA, date: "2030-01-10" });
   return b.commit();
 }
 
-test("agendamento com todos os blocos passa", async () => {
-  await assertSucceeds(booking(db(A), "b1", A, "08:30", "10:00",
-    ["2030-01-10_08:30", "2030-01-10_09:00", "2030-01-10_09:30"]));
+test("perfil: só o dono escreve, com campos válidos", async () => {
+  await assertSucceeds(setDoc(doc(as(ANA), `users/${ANA}`), profile()));
+  await assertFails(setDoc(doc(as(ANA), `users/${BIA}`), profile("Bia")));
+  await assertFails(setDoc(doc(as(ANA), `users/${ANA}`), { ...profile(), avatar: "💀" }));
+  await assertFails(setDoc(doc(as(ANA), `users/${ANA}`), { ...profile(), admin: true }));
 });
 
-test("agendamento que reserva só o primeiro bloco falha", async () => {
-  await assertFails(booking(db(A), "b1", A, "08:00", "10:00", ["2030-01-10_08:00"]));
+test("dados privados: só o dono lê, e o e-mail tem de ser o do login", async () => {
+  await assertSucceeds(setDoc(doc(as(ANA), `users/${ANA}/private/data`), { email: `${ANA}@x.com`, birthDate: "01/02/2000" }));
+  await assertFails(setDoc(doc(as(ANA), `users/${ANA}/private/data`), { email: "outro@x.com", birthDate: "" }));
+  await assertSucceeds(getDoc(doc(as(ANA), `users/${ANA}/private/data`)));
+  await assertFails(getDoc(doc(as(BIA), `users/${ANA}/private/data`)));
 });
 
-test("bloco fora do intervalo ou de outra data falha", async () => {
-  await assertFails(booking(db(A), "b1", A, "08:00", "08:30", ["2030-01-10_08:00", "2030-01-10_12:00"]));
-  await assertFails(booking(db(A), "b1", A, "08:00", "08:30", ["2030-01-10_08:00", "2030-01-11_08:00"]));
+test("agenda: jogo com todos os blocos passa; conflito e jogo sem blocos não", async () => {
+  await assertSucceeds(book(as(ANA), "b1", "18:00", "19:30", ["18:00", "18:30", "19:00"]));
+  await assertFails(book(as(ANA), "b2", "19:00", "20:00", ["19:00", "19:30"])); // 19:00 já é do b1
+  await assertFails(book(as(ANA), "b3", "20:00", "21:00", ["20:00"])); // faltou o bloco 20:30
+  await assertFails(book(as(ANA), "b4", "06:00", "09:30", ["06:00", "06:30", "07:00", "07:30", "08:00", "08:30", "09:00"])); // > 3 h
+  await assertFails(book(as(ANA), "b5", "10:00", "10:30", ["10:00"], { organizerName: "Bia" })); // nome falso
+  await assertFails(book(as(ANA), "b6", "05:30", "06:30", ["05:30", "06:00"])); // antes de abrir
 });
 
-test("mais de 3h falha", async () => {
-  const slots = ["08:00", "08:30", "09:00", "09:30", "10:00", "10:30", "11:00", "11:30"].map((t) => `2030-01-10_${t}`);
-  await assertFails(booking(db(A), "b1", A, "08:00", "12:00", slots));
+test("agenda: só o organizador cancela, e só muda o status", async () => {
+  await book(as(ANA), "b1", "18:00", "19:00", ["18:00", "18:30"]);
+  await assertFails(updateDoc(doc(as(BIA), "bookings/b1"), { status: "CANCELLED" }));
+  await assertFails(updateDoc(doc(as(ANA), "bookings/b1"), { status: "CANCELLED", notes: "x" }));
+  await assertSucceeds(updateDoc(doc(as(ANA), "bookings/b1"), { status: "CANCELLED" }));
+  await assertFails(setDoc(doc(as(BIA), "slots/2030-01-10_18:00"), { bookingId: "b1", organizerId: BIA, date: "2030-01-10" }));
 });
 
-test("horário já ocupado por outro não pode ser reservado", async () => {
-  await assertSucceeds(booking(db(A), "b1", A, "08:00", "09:00", ["2030-01-10_08:00", "2030-01-10_08:30"]));
-  await assertFails(booking(db(B), "b2", B, "08:30", "09:30", ["2030-01-10_08:30", "2030-01-10_09:00"]));
+test("mural: curtida e contador andam juntos", async () => {
+  const db = as(ANA);
+  const like = (n) => writeBatch(db).set(doc(db, `posts/p1/likes/${ANA}`), { uid: ANA, createdAt: serverTimestamp() }).update(doc(db, "posts/p1"), { likesCount: increment(n) }).commit();
+  await assertFails(like(2));
+  await assertFails(setDoc(doc(db, `posts/p1/likes/${ANA}`), { uid: ANA })); // curtida sem contador
+  await assertSucceeds(like(1));
+  await assertFails(like(1)); // curtir duas vezes
+  await assertFails(updateDoc(doc(db, "posts/p1"), { text: "editado" }));
+  await assertFails(addDoc(collection(db, "posts"), { authorId: ANA, authorName: "Bia", authorAvatar: "⚽", sport: "FUTEBOL", text: "x", likesCount: 0 }));
+  await assertSucceeds(addDoc(collection(db, "posts"), { authorId: ANA, authorName: "Ana", authorAvatar: "⚽", sport: "FUTEBOL", text: "x", likesCount: 0, createdAt: serverTimestamp() }));
 });
 
-test("não cria agendamento em nome de outro", async () => {
-  await assertFails(booking(db(B), "b1", A, "08:00", "08:30", ["2030-01-10_08:00"]));
+test("conversas: mensagem em nome próprio, contadores honestos e bloqueio", async () => {
+  const conv = `${ANA}_${BIA}`;
+  const send = (db, from, to, unread = { [to]: increment(1) }, names = { [ANA]: "Ana", [BIA]: "Bia" }) => writeBatch(db)
+    .set(doc(db, `conversations/${conv}`), { participants: [ANA, BIA], names, lastMessage: "oi", lastSenderId: from, lastAt: serverTimestamp(), unread }, { merge: true })
+    .set(doc(db, `conversations/${conv}/messages/m${Math.random()}`), { senderId: from, receiverId: to, text: "oi", createdAt: serverTimestamp() })
+    .commit();
+  await assertSucceeds(send(as(ANA), ANA, BIA));
+  await assertFails(send(as(ANA), BIA, ANA)); // fingindo ser a Bia
+  await assertFails(send(as(ANA), ANA, BIA, { [BIA]: increment(5) })); // inflando não lidas
+  await assertFails(send(as(ANA), ANA, BIA, undefined, { [ANA]: "Ana", [BIA]: "Chata" })); // nome falso
+  await assertFails(getDoc(doc(as("intruso00000000000000000000x"), `conversations/${conv}`)));
+  await assertSucceeds(updateDoc(doc(as(BIA), `conversations/${conv}`), { [`unread.${BIA}`]: 0 }));
+
+  await env.withSecurityRulesDisabled((ctx) => setDoc(doc(ctx.firestore(), `users/${BIA}/private/data`), { email: "", birthDate: "", blocked: [ANA] }));
+  await assertFails(send(as(ANA), ANA, BIA)); // Bia bloqueou a Ana
 });
 
-// ---------- Chat ----------
+test("tokens, alertas e denúncias", async () => {
+  await assertSucceeds(setDoc(doc(as(ANA), `users/${ANA}/tokens/t1`), { platform: "ios", broadcasts: false, createdAt: serverTimestamp() }));
+  await assertFails(setDoc(doc(as(ANA), `users/${ANA}/tokens/t2`), { platform: "web", broadcasts: true }));
+  await assertFails(setDoc(doc(as(BIA), `users/${ANA}/tokens/t3`), { platform: "ios", broadcasts: true }));
 
-const CONV = [A, B].sort().join("_");
+  await assertFails(setDoc(doc(as(ANA), `users/${ANA}/notifications/n1`), { title: "fake", read: false }));
+  await env.withSecurityRulesDisabled((ctx) => setDoc(doc(ctx.firestore(), `users/${ANA}/notifications/n1`), { title: "x", read: false }));
+  await assertSucceeds(updateDoc(doc(as(ANA), `users/${ANA}/notifications/n1`), { read: true }));
+  await assertFails(updateDoc(doc(as(ANA), `users/${ANA}/notifications/n1`), { title: "y" }));
 
-function send(f, from, to, names, text = "oi") {
-  const b = writeBatch(f);
-  b.set(doc(f, "conversations", CONV), {
-    participants: [A, B].sort(), names, lastMessage: text, lastSenderId: from,
-    unread: { [to]: increment(1) },
-  }, { merge: true });
-  b.set(doc(f, "conversations", CONV, "messages", `m${Math.random()}`), { senderId: from, receiverId: to, text });
-  return b.commit();
-}
-
-test("mensagem normal passa e não lidas zeram", async () => {
-  await assertSucceeds(send(db(A), A, B, { [A]: "Alice", [B]: "Bob" }));
-  await assertSucceeds(updateDoc(doc(db(B), "conversations", CONV), `unread.${B}`, 0));
+  const report = { reporterId: ANA, type: "POST", targetId: "p1", targetUserId: BIA, text: "spam", createdAt: serverTimestamp() };
+  await assertSucceeds(setDoc(doc(as(ANA), "reports/r1"), report));
+  await assertFails(getDoc(doc(as(ANA), "reports/r1")));
+  await assertFails(setDoc(doc(as(ANA), "reports/r2"), { ...report, reporterId: BIA }));
 });
 
-test("não dá pra falsificar nomes", async () => {
-  await assertFails(send(db(A), A, B, { [A]: "Admin", [B]: "Bob" }));
-  await assertFails(send(db(A), A, B, { [A]: "Alice", [B]: "Bobão" }));
+test("sem login não lê nada", async () => {
+  const anon = env.unauthenticatedContext().firestore();
+  await assertFails(getDoc(doc(anon, `users/${ANA}`)));
+  await assertFails(getDoc(doc(anon, "posts/p1")));
+  await assertFails(setDoc(doc(anon, "reports/r1"), { reporterId: "", type: "POST", targetId: "x", targetUserId: "y", text: "" }));
 });
 
-test("não dá pra mexer nas não lidas à vontade", async () => {
-  await assertSucceeds(send(db(A), A, B, { [A]: "Alice", [B]: "Bob" }));
-  await assertFails(updateDoc(doc(db(A), "conversations", CONV), `unread.${B}`, 50));
-  await assertFails(updateDoc(doc(db(A), "conversations", CONV), `unread.${B}`, 0));
-});
-
-test("terceiro não lê a conversa", async () => {
-  await assertSucceeds(send(db(A), A, B, { [A]: "Alice", [B]: "Bob" }));
-  await assertFails(getDoc(doc(db("carol"), "conversations", CONV)));
-});
-
-test("bloqueado não consegue mandar mensagem", async () => {
-  await assertSucceeds(send(db(B), B, A, { [A]: "Alice", [B]: "Bob" }));
-  await env.withSecurityRulesDisabled((ctx) =>
-    updateDoc(doc(ctx.firestore(), "users", A, "private", "data"), { blocked: [B] }));
-  await assertFails(send(db(B), B, A, { [A]: "Alice", [B]: "Bob" }));
-});
-
-// ---------- Mural e denúncias ----------
-
-test("curtir duas vezes falha", async () => {
-  await env.withSecurityRulesDisabled((ctx) =>
-    setDoc(doc(ctx.firestore(), "posts", "p1"), { authorId: B, text: "oi", likesCount: 0 }));
-  const like = (f) => {
-    const b = writeBatch(f);
-    b.set(doc(f, "posts", "p1", "likes", A), { uid: A });
-    b.update(doc(f, "posts", "p1"), { likesCount: increment(1) });
-    return b.commit();
-  };
-  await assertSucceeds(like(db(A)));
-  await assertFails(like(db(A)));
-});
-
-test("denúncia: cria, mas não lê", async () => {
-  const r = { reporterId: A, type: "POST", targetId: "p1", targetUserId: B, text: "spam" };
-  await assertSucceeds(setDoc(doc(db(A), "reports", "r1"), r));
-  await assertFails(setDoc(doc(db(A), "reports", "r2"), { ...r, reporterId: B }));
-  await assertFails(getDoc(doc(db(A), "reports", "r1")));
-});

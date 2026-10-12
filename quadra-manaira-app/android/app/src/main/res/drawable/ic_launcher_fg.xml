@@ -1,0 +1,12 @@
+<?xml version="1.0" encoding="utf-8"?>
+<!-- A quadra vista de cima: linhas amarelas do piso. Fica toda dentro da zona segura (círculo de 66 dp). -->
+<vector xmlns:android="http://schemas.android.com/apk/res/android"
+    android:width="108dp"
+    android:height="108dp"
+    android:viewportWidth="108"
+    android:viewportHeight="108">
+    <path
+        android:strokeColor="#F5C400"
+        android:strokeWidth="3"
+        android:pathData="M29,38 H79 V70 H29 Z M54,38 V70 M61,54 A7,7 0 1,1 47,54 A7,7 0 1,1 61,54" />
+</vector>

@@ -34,6 +34,7 @@ import com.google.firebase.firestore.SetOptions
 import com.google.firebase.messaging.FirebaseMessaging
 import kotlinx.coroutines.Dispatchers
 import kotlinx.coroutines.ExperimentalCoroutinesApi
+import kotlinx.coroutines.NonCancellable
 import kotlinx.coroutines.channels.awaitClose
 import kotlinx.coroutines.flow.Flow
 import kotlinx.coroutines.flow.callbackFlow
@@ -289,8 +290,11 @@ object Repo {
         if (password.length < 6) throw UserError("A senha precisa ter pelo menos 6 caracteres.")
         val user = auth.createUserWithEmailAndPassword(email.trim(), password).await().user
             ?: throw UserError("Não foi possível criar a conta.")
-        writeProfile(user.uid, user.email.orEmpty(), name.trim(), birth.trim(), sport, avatar, isNew = true)
-        runCatching { user.sendEmailVerification().await() } // se falhar, a tela de confirmação reenvia
+        // Criada a conta, a sessão troca de tela e cancela quem chamou; o resto do cadastro não pode parar no meio.
+        withContext(NonCancellable) {
+            writeProfile(user.uid, user.email.orEmpty(), name.trim(), birth.trim(), sport, avatar, isNew = true)
+            runCatching { user.sendEmailVerification().await() } // se falhar, a tela de confirmação reenvia
+        }
     }
 
     suspend fun resendVerification() {
@@ -328,9 +332,11 @@ object Repo {
         val google = GoogleIdTokenCredential.createFrom(credential.data)
         val user = auth.signInWithCredential(GoogleAuthProvider.getCredential(google.idToken, null)).await().user
             ?: throw UserError("Falha no login com Google.")
-        // Primeiro acesso: cria o perfil sem nascimento; a sessão pede para completar.
-        if (!users.document(user.uid).get().await().exists()) {
-            writeProfile(user.uid, user.email.orEmpty(), (google.displayName ?: "Atleta").take(60), "", Sport.VOLEI_PRAIA, AVATARS[0], isNew = true)
+        // Primeiro acesso: cria o perfil sem nascimento; a sessão pede para completar (e cancela quem chamou, ver register).
+        withContext(NonCancellable) {
+            if (!users.document(user.uid).get().await().exists()) {
+                writeProfile(user.uid, user.email.orEmpty(), (google.displayName ?: "Atleta").take(60), "", Sport.VOLEI_PRAIA, AVATARS[0], isNew = true)
+            }
         }
     }
 

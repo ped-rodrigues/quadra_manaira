@@ -1,6 +1,6 @@
 # Quadra de Manaíra: o que falta fazer
 
-_Criado em: 2026-09-22 · Atualizado em: 2026-10-11 (apps Android e iOS reescritos do zero) · Código em `quadra-manaira-app/` · Contexto e histórico em `NOTAS.md`_
+_Criado em: 2026-09-22 · Atualizado em: 2026-10-12 (e-mail confirmado obrigatório; iOS no CI) · Código em `quadra-manaira-app/` · Contexto e histórico em `NOTAS.md`_
 
 Legenda de prioridade: 🔴 bloqueia o lançamento · 🟡 importante · 🟢 melhoria
 
@@ -8,8 +8,8 @@ Legenda de prioridade: 🔴 bloqueia o lançamento · 🟡 importante · 🟢 me
 
 ## 0. Agora (sessão de 2026-10-11)
 
-- [ ] 🔴 **Rodar o build do iOS no GitHub Actions.** O workflow está pronto em `.github/workflows/ios.yml` (não commitado), mas o token do `gh` não tem o escopo `workflow`. Rode `gh auth refresh -h github.com -s workflow`, aprove no navegador e faça o push. **O código iOS ainda não foi compilado nenhuma vez.**
-- [ ] 🟡 Decidir: **exigir e-mail verificado** para escrever (achado MÉDIO da auditoria em `NOTAS.md`, seção 10)
+- [x] Build do iOS no GitHub Actions ✅ 2026-10-12 (compila; ver seção 2 para o teste no simulador)
+- [x] Exigir e-mail confirmado ✅ 2026-10-12
 - [ ] 🟡 Abrir o PR do branch `app-nativo` para o `main` (o repositório é **público**)
 
 ## 1. Configuração do Firebase
@@ -25,7 +25,7 @@ Legenda de prioridade: 🔴 bloqueia o lançamento · 🟡 importante · 🟢 me
 - [ ] 🟡 Plano **Blaze** + `firebase deploy --only functions` (sem isso não há push, lembrete nem aniversário)
 - [ ] 🟡 **Alerta de orçamento** no Google Cloud (ex.: R$ 10)
 - [ ] 🟡 Ativar a **política de senha** do Auth (o padrão aceita 6 caracteres; achado BAIXO da auditoria)
-- [ ] 🟢 Traduzir os e-mails do Auth (redefinição de senha) para português
+- [ ] 🟡 Traduzir os e-mails do Auth (confirmação de e-mail e redefinição de senha) para português; o de confirmação é o primeiro contato de todo mundo com o app
 
 ## 2. Testes que faltam
 
@@ -33,18 +33,18 @@ Legenda de prioridade: 🔴 bloqueia o lançamento · 🟡 importante · 🟢 me
 - [x] Regras do Firestore: 8 cenários (~40 verificações) no emulador ✅ 2026-10-11
 - [x] Android de ponta a ponta no emulador contra o Firebase Emulator: cadastro, login, agendar, cancelar, mural, curtir, conversa com não lidas, localização ✅ 2026-10-11
 - [x] Release sem configuração abre a tela "Firebase não configurado" (falha fechada) ✅ 2026-10-11
-- [ ] 🔴 iOS: compilar e rodar os testes (ver seção 0) e testar no simulador com o Firebase Emulator
+- [x] iOS compila (debug e release) e os testes passam no simulador do GitHub Actions ✅ 2026-10-12
+- [ ] 🔴 iOS: testar as telas num Mac/iPhone de verdade (ninguém viu o app iOS rodando ainda)
 - [ ] 🔴 Com o Firebase real, **dois celulares** (um Android e um iPhone):
   - [ ] Conflito: os dois tentam o mesmo horário ao mesmo tempo; só um consegue
   - [ ] Push com o app fechado e aberto, nos dois sistemas
-  - [ ] Login com Google (Android) e "esqueci minha senha" (o e-mail chega?)
+  - [ ] Login com Google (Android), "esqueci minha senha" e o link de confirmação (o e-mail chega? cai no spam?)
   - [ ] Lembrete de 24 h e aniversário (rodar as Functions manualmente)
   - [ ] Excluir conta (a Function `onUserDeleted` apaga tudo?)
   - [ ] Modo avião, tema escuro, fonte grande do sistema
 
 ## 3. Problemas conhecidos
 
-- [ ] 🟡 Contas com **e-mail não verificado** têm acesso total (ver seção 0)
 - [ ] 🟡 Mudança de nome não se propaga para posts, jogos e conversas antigos
 - [ ] 🟡 **Firebase App Check** (Play Integrity / App Attest) para bloquear chamadas fora dos apps oficiais
 - [ ] 🟢 Limite de jogos futuros por pessoa (ninguém reservar a semana toda)

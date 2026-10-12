@@ -1,6 +1,6 @@
 # Quadra de Manaíra — Notas do projeto
 
-_Última atualização: 2026-10-11_
+_Última atualização: 2026-10-12_
 
 ## Status atual
 
@@ -9,7 +9,8 @@ _Última atualização: 2026-10-11_
 - [x] 2026-09-22/28: primeiro app Kotlin (seção 8, **substituído**; está no commit `7ba3fb7`)
 - [x] 2026-10-11: **reescrita do zero**: app Android nativo (Compose), app iOS nativo (SwiftUI) e backend refeito (seção 9)
 - [x] Android compilado e testado de ponta a ponta no emulador; regras testadas; auditoria de configurações inseguras (seção 10)
-- [ ] **iOS ainda não compilado** (Windows não compila iOS; workflow do GitHub pronto, falta o escopo `workflow` no `gh`)
+- [x] 2026-10-12: iOS compila e passa nos testes no GitHub Actions (`.github/workflows/ios.yml`); telas ainda não vistas num iPhone
+- [x] 2026-10-12: **e-mail confirmado obrigatório** (achado MÉDIO da auditoria, seção 10)
 - [ ] **Pendente (você):** criar o Firebase (Android + iOS + chave APNs). Passo a passo em `quadra-manaira-app/LEIAME.md`
 - Lista completa do que falta: **`PENDENCIAS.md`**
 
@@ -258,7 +259,7 @@ Adaptação do `/insecure-defaults:audit` (Trail of Bits) feita à mão, porque 
 
 | # | Severidade | Categoria | Onde (sink) | Problema | Correção |
 |---|---|---|---|---|---|
-| 1 | MÉDIA | acesso permissivo | `firestore.rules` (`signedIn()` em posts, bookings, messages) | Conta com e-mail **não verificado** escreve tudo: dá para criar contas em série com e-mails falsos (ou de outra pessoa) e postar, agendar e mandar mensagens | Mandar e-mail de verificação no cadastro e exigir `request.auth.token.email_verified == true` nas escritas (login Google já vem verificado). Precisa de uma tela "confirme seu e-mail" nos dois apps. **Não feito: decisão de produto** |
+| 1 | MÉDIA | acesso permissivo | `firestore.rules` (`signedIn()` em posts, bookings, messages) | Conta com e-mail **não verificado** escreve tudo: dá para criar contas em série com e-mails falsos (ou de outra pessoa) e postar, agendar e mandar mensagens | Mandar e-mail de verificação no cadastro e exigir `request.auth.token.email_verified == true` nas escritas (login Google já vem verificado). Precisa de uma tela "confirme seu e-mail" nos dois apps. **Feito em 2026-10-12** (ver histórico) |
 | 2 | BAIXA | padrão fraco | Firebase Auth (console) | Política de senha padrão aceita 6 caracteres | Ativar a política de senha no console (mínimo 8, letras e números) |
 | 3 | BAIXA | acesso permissivo | `ios/project.yml` (`NSAllowsLocalNetworking`) | HTTP liberado para a rede local também no release | Aceito: o release não faz chamadas locais e o TLS para Firebase/Open-Meteo continua obrigatório. Para zerar, separar o Info.plist por configuração |
 
@@ -278,3 +279,4 @@ Adaptação do `/insecure-defaults:audit` (Trail of Bits) feita à mão, porque 
 - **2026-09-22**: criado `PENDENCIAS.md` com tudo o que falta (configuração, testes, problemas conhecidos, publicação).
 - **2026-09-28**: resolvidos os itens de código da seção 3 do `PENDENCIAS.md` (privacidade, excluir conta, denunciar/bloquear, regras de chat e slots, limpezas, push duplicado, silenciar avisos) + testes das regras no emulador. App Android ainda não compilado.
 - **2026-10-11**: reescrita do zero (seção 9): Android nativo novo, iOS nativo, regras e Functions refeitas; Android compilado e testado de ponta a ponta no emulador com o Firebase Emulator; regras com 8 cenários de teste; auditoria de configurações inseguras e de dependências (seção 10: grpc-js e Jackson corrigidos); branch `app-nativo` enviado ao GitHub. iOS aguarda compilação no GitHub Actions.
+- **2026-10-12**: escopo `workflow` liberado no `gh`; o iOS compilou de primeira no GitHub Actions, mas os testes derrubavam o app: no modo emulador o SDK exige uma chave no formato real (39 caracteres, começando com "A"). Corrigido; `deleteToken()` trocado por `unregister()`. **E-mail confirmado obrigatório**: regras com `verified()` (`email_verified` no token) em tudo fora do próprio perfil, tokens e alertas; o cadastro manda o link e a sessão para em "Confirme seu e-mail" (Android `Session.Unverified`, iOS `.unverified`), que confere sozinha ao voltar para o app; a sessão ouve o token (`IdTokenListener`), que é o que muda ao confirmar. Teste das regras novo (9/9). Testado no emulador Android: conta nova fica presa na tela de confirmação, "Já confirmei" antes do link dá erro, link do emulador → voltar ao app abre a agenda. **Bug achado no teste:** o link não saía no cadastro porque, criada a conta, a tela de login sai de cena e cancela a corrotina do cadastro no meio; o resto do cadastro (e do primeiro login com Google) agora roda em `NonCancellable`.

@@ -178,10 +178,12 @@ sequenceDiagram
     participant App
     participant Auth as Firebase Auth
     participant FS as Firestore
-    App->>Auth: AuthStateListener
+    App->>Auth: IdTokenListener (muda também quando o e-mail é confirmado)
     alt sem usuário
         App->>App: SignedOut → login/cadastro
-    else com usuário
+    else e-mail não confirmado
+        App->>App: Unverified → "Confirme seu e-mail" (confere ao voltar para o app)
+    else com usuário confirmado
         App->>FS: escuta users/{uid} + users/{uid}/private/data
         alt sem perfil ou sem nascimento
             App->>App: NeedsProfile → "Falta pouco"

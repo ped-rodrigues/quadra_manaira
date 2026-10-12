@@ -16,7 +16,7 @@ quadra-manaira-app/
 │   ├── QuadraManaira/       Mesmos arquivos e nomes do Android: Data, App, Theme, *View(s)
 │   └── QuadraManairaTests/  Testes das regras puras
 └── firebase/                Backend comum
-    ├── firestore.rules      Regras de segurança (valida tudo no servidor)
+    ├── firestore.rules      Regras de segurança (valida tudo no servidor; comunidade só com e-mail confirmado)
     ├── firestore.indexes.json
     └── functions/           Push, lembrete 24 h, aniversários, limpezas, exclusão de conta + testes das regras
 ```
@@ -34,6 +34,9 @@ firebase emulators:start --only auth,firestore --project demo-quadra   # precisa
 - Android: rode o app de debug num emulador Android (ele usa `10.0.2.2`, que é o PC).
 - iOS: rode o app de debug no simulador (ele usa `localhost`, que é o Mac).
 - Painel do emulador: http://localhost:4000
+- Contas por e-mail precisam confirmar o e-mail. No emulador o link não é enviado: ele aparece no terminal do
+  `firebase emulators:start` (e em `http://localhost:9099/emulator/v1/projects/demo-quadra/oobCodes`). Abra o link no
+  navegador e volte para o app.
 
 ## Compilar
 

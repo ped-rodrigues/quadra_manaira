@@ -40,6 +40,7 @@ import kotlinx.coroutines.flow.Flow
 import kotlinx.coroutines.flow.callbackFlow
 import kotlinx.coroutines.flow.combine
 import kotlinx.coroutines.flow.distinctUntilChanged
+import kotlinx.coroutines.flow.filterNotNull
 import kotlinx.coroutines.flow.flatMapLatest
 import kotlinx.coroutines.flow.flowOf
 import kotlinx.coroutines.flow.map
@@ -273,6 +274,9 @@ object Repo {
         val (uid, verified) = user ?: return@flatMapLatest flowOf(Session.SignedOut)
         if (!verified) flowOf(Session.Unverified(auth.currentUser?.email.orEmpty()))
         else combine(users.document(uid).flow(), privateDoc(uid).flow()) { pub, priv ->
+            // Sem resposta do servidor, "não está no cache" não quer dizer "não existe": segue carregando
+            // em vez de pedir de novo o perfil de quem já tem.
+            if (listOf(pub, priv).any { !it.exists() && it.metadata.isFromCache }) return@combine null
             @Suppress("UNCHECKED_CAST")
             val me = if (!pub.exists()) null else pub.toProfile().copy(
                 email = priv.getString("email") ?: auth.currentUser?.email.orEmpty(),
@@ -280,7 +284,7 @@ object Repo {
                 blocked = (priv.get("blocked") as? List<String>).orEmpty().toSet(),
             )
             if (me != null && me.birthDate.isNotBlank()) Session.Ready(me) else Session.NeedsProfile(uid, me)
-        }
+        }.filterNotNull()
     }
 
     suspend fun login(email: String, password: String) {

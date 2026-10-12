@@ -18,7 +18,9 @@ final class TourUITests: XCTestCase {
         password.typeText("quadra123")
         app.buttons["Entrar"].tap()
 
-        // Depois do login o app pede permissão de notificação.
+        // Depois do login o iOS oferece guardar a senha e o app pede permissão de notificação.
+        let notNow = app.buttons["Not Now"]
+        if notNow.waitForExistence(timeout: 8) { notNow.tap() }
         let alert = XCUIApplication(bundleIdentifier: "com.apple.springboard").alerts.firstMatch
         if alert.waitForExistence(timeout: 10) { alert.buttons.element(boundBy: 1).tap() }
 

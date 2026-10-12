@@ -35,8 +35,9 @@ final class AppDelegate: NSObject, UIApplicationDelegate, MessagingDelegate, UNU
             options.projectID = "demo-quadra"
             options.apiKey = "A" + String(repeating: "0", count: 38) // o SDK exige o formato de chave real (39 caracteres)
             FirebaseApp.configure(options: options)
-            Auth.auth().useEmulator(withHost: "localhost", port: 9099)
-            Firestore.firestore().useEmulator(withHost: "localhost", port: 8080)
+            // 127.0.0.1 e não localhost: o gRPC do Firestore tenta o IPv6 (::1) e o emulador só escuta IPv4.
+            Auth.auth().useEmulator(withHost: "127.0.0.1", port: 9099)
+            Firestore.firestore().useEmulator(withHost: "127.0.0.1", port: 8080)
             Self.configured = true
             #endif
         }

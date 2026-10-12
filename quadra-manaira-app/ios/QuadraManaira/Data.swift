@@ -277,6 +277,9 @@ enum Repo {
                 var pub: DocumentSnapshot?, priv: DocumentSnapshot?
                 func emit() {
                     guard let pub, let priv else { return }
+                    // Sem resposta do servidor, "não está no cache" não quer dizer "não existe": segue carregando
+                    // em vez de pedir de novo o perfil de quem já tem.
+                    if [pub, priv].contains(where: { !$0.exists && $0.metadata.isFromCache }) { return }
                     guard pub.exists else { c.yield(.needsProfile(nil)); return }
                     var me = pub.profile
                     me.email = priv.get("email") as? String ?? user.email ?? ""

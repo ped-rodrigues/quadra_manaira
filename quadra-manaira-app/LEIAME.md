@@ -58,7 +58,8 @@ O workflow `.github/workflows/ios.yml` compila e roda os testes num Mac do GitHu
 ## Firebase de verdade
 
 Já existe: projeto **`quadra-de-manaira`** (conta pedro.rcosta2006, plano gratuito). Com os arquivos de configuração
-no lugar, os builds de debug falam com ele; tire os arquivos para voltar ao emulador. Para baixá-los de novo:
+no lugar, os builds de debug falam com ele; sem eles, falam com o emulador. Neste PC o do Android está guardado como
+`android/app/google-services.json.real`: tire o `.real` para testar no Firebase de verdade. Para baixá-los de novo:
 `firebase apps:sdkconfig ANDROID|IOS <id do app> -o <arquivo>` (ids em `firebase apps:list`).
 
 Para recriar do zero em outra conta:

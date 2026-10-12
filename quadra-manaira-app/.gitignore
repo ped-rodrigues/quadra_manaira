@@ -8,8 +8,8 @@ local.properties
 *.jks
 *.keystore
 # Configs do Firebase ficam fora do git
-android/app/google-services.json
-ios/QuadraManaira/GoogleService-Info.plist
+android/app/google-services.json*
+ios/QuadraManaira/GoogleService-Info.plist*
 ios/*.xcodeproj/
 firebase/functions/node_modules/
 firebase/functions/lib/

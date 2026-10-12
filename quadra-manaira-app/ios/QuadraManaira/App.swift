@@ -20,6 +20,10 @@ final class AppDelegate: NSObject, UIApplicationDelegate, MessagingDelegate, UNU
     static var configured = false
 
     func application(_ app: UIApplication, didFinishLaunchingWithOptions _: [UIApplication.LaunchOptionsKey: Any]? = nil) -> Bool {
+        // Títulos grandes na fonte de placar, como no Android.
+        if let font = UIFont(name: "BarlowCondensed-SemiBold", size: 36) {
+            UINavigationBar.appearance().largeTitleTextAttributes = [.font: font]
+        }
         if Bundle.main.path(forResource: "GoogleService-Info", ofType: "plist") != nil {
             FirebaseApp.configure()
             Self.configured = true

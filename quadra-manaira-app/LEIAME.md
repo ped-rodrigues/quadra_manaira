@@ -55,7 +55,14 @@ cd ios && xcodegen && open QuadraManaira.xcodeproj
 ```
 O workflow `.github/workflows/ios.yml` compila e roda os testes num Mac do GitHub a cada push em `ios/`.
 
-## Criar o Firebase de verdade
+## Firebase de verdade
+
+Já existe: projeto **`quadra-de-manaira`** (conta pedro.rcosta2006, plano gratuito). Com os arquivos de configuração
+no lugar, os builds de debug falam com ele; tire os arquivos para voltar ao emulador. Para baixá-los de novo:
+`firebase apps:sdkconfig ANDROID|IOS <id do app> -o <arquivo>` (ids em `firebase apps:list`).
+
+Para recriar do zero em outra conta:
+
 
 1. Em https://console.firebase.google.com crie o projeto.
 2. **Android**: adicione o app `br.com.quadramanaira`, cadastre as SHA-1 (debug, release e Play App Signing;

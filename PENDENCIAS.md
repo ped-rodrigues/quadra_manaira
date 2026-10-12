@@ -14,18 +14,18 @@ Legenda de prioridade: 🔴 bloqueia o lançamento · 🟡 importante · 🟢 me
 
 ## 1. Configuração do Firebase
 
-- [ ] 🔴 **Criar o projeto no Firebase** (console.firebase.google.com)
-- [ ] 🔴 Registrar o app **Android** `br.com.quadramanaira` e colocar o `google-services.json` em `quadra-manaira-app/android/app/`
-- [ ] 🔴 Registrar o app **iOS** `br.com.quadramanaira` e colocar o `GoogleService-Info.plist` em `quadra-manaira-app/ios/QuadraManaira/`
-- [ ] 🔴 Ativar **Authentication**: *E-mail/senha* (os dois apps) e *Google* (só Android)
-- [ ] 🔴 Criar o **Firestore** em modo produção, região `southamerica-east1`
-- [ ] 🔴 Cadastrar as **SHA-1** (debug, release e Play App Signing); sem elas o login com Google falha
+- [x] Projeto `quadra-de-manaira` criado (plano gratuito Spark, sem Analytics e sem Gemini) ✅ 2026-10-12
+- [x] App Android registrado e `google-services.json` no lugar ✅ 2026-10-12
+- [x] App iOS registrado e `GoogleService-Info.plist` no lugar ✅ 2026-10-12
+- [x] Authentication: e-mail/senha e Google ativos ✅ 2026-10-12
+- [x] Firestore em modo produção, `southamerica-east1` ✅ 2026-10-12
+- [ ] 🔴 Cadastrar as **SHA-1** de release e do Play App Signing (a de debug deste PC já está); sem elas o login com Google falha na versão da loja
 - [ ] 🔴 Enviar a **chave APNs** (.p8) em *Cloud Messaging*; sem ela o iOS não recebe push
-- [ ] 🔴 Deploy das regras e dos índices: `firebase deploy --only firestore`
-- [ ] 🟡 Plano **Blaze** + `firebase deploy --only functions` (sem isso não há push, lembrete nem aniversário)
+- [x] Regras e índices publicados (`firebase deploy --only firestore`) ✅ 2026-10-12
+- [ ] 🟡 Plano **Blaze** + `firebase deploy --only functions`. **Decisão: ficar no gratuito por enquanto**, então não há push, lembrete de 24 h, aniversário nem limpeza automática; a exclusão de conta apaga o login, mas os dados no Firestore ficam
 - [ ] 🟡 **Alerta de orçamento** no Google Cloud (ex.: R$ 10)
-- [ ] 🟡 Ativar a **política de senha** do Auth (o padrão aceita 6 caracteres; achado BAIXO da auditoria)
-- [ ] 🟡 Traduzir os e-mails do Auth (confirmação de e-mail e redefinição de senha) para português; o de confirmação é o primeiro contato de todo mundo com o app
+- [x] Política de senha exigida: 8+ caracteres, minúscula e número (os apps conferem a mesma regra) ✅ 2026-10-12
+- [x] E-mails do Auth em português ✅ 2026-10-12
 
 ## 2. Testes que faltam
 

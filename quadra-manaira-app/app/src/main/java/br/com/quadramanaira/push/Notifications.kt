@@ -17,6 +17,15 @@ import br.com.quadramanaira.R
 
 object Notifications {
 
+    private fun prefs(context: Context) = context.getSharedPreferences("quadra_prefs", Context.MODE_PRIVATE)
+
+    /** Avisos gerais (novos jogos, cancelamentos, aniversários). Desligado = só meus jogos e mensagens. */
+    fun broadcastsEnabled(context: Context): Boolean = prefs(context).getBoolean("broadcasts", true)
+
+    fun setBroadcastsEnabled(context: Context, enabled: Boolean) {
+        prefs(context).edit().putBoolean("broadcasts", enabled).apply()
+    }
+
     fun createChannel(context: Context) {
         val channel = NotificationChannel(
             context.getString(R.string.notification_channel_id),

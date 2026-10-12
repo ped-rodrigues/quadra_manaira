@@ -1,6 +1,6 @@
 # Quadra de Manaíra — Notas do projeto
 
-_Última atualização: 2026-09-22_
+_Última atualização: 2026-09-28_
 
 ## Status atual
 
@@ -200,10 +200,19 @@ Supabase
 - **Foto anexada no mural** ainda não foi implementada (exigiria o Firebase Storage). Avatares continuam sendo emojis.
 - Só o **organizador** pode cancelar o próprio agendamento.
 
+### Correções de 2026-09-28 (itens da seção 3 do PENDENCIAS)
+- **Privacidade:** `users/{uid}` só tem nome, avatar, esporte e `birthDayMonth`. E-mail, nascimento e lista de bloqueados ficam em `users/{uid}/private/data` (só o dono lê). `UserRepository.myProfile` junta as duas partes.
+- **Excluir conta:** Perfil → "Excluir minha conta". O app apaga o usuário do Auth (se o login for antigo, pede para sair e entrar de novo); a Function `onUserDeleted` (gatilho v1 de Auth) apaga posts, curtidas, conversas, agendamentos (jogos futuros viram cancelados) e o perfil.
+- **Denunciar/bloquear:** menu ⋮ no post e na conversa. Denúncia grava em `reports` (só leitura pelo console; **alguém precisa olhar lá**). Bloquear esconde posts e conversas da pessoa e as regras recusam mensagens dela.
+- **Regras:** chat só aceita os nomes reais dos perfis e não lidas só zeram (as minhas) ou sobem 1 (as do outro); agendamento exige todos os blocos de 30 min do intervalo, e cada bloco tem de estar dentro de um agendamento confirmado do próprio usuário.
+- **Push:** aviso geral virou mensagem só `data` com `excludeUid`, então quem agenda/cancela/faz aniversário não recebe o aviso duplicado; chave "Avisos gerais da quadra" no Perfil silencia os avisos gerais.
+- **Functions novas:** `onPostDeleted` (curtidas órfãs), `monthlyCleanup` (agendamentos e slots de datas passadas), `onUserDeleted`.
+- **Chat:** mensagem sai com o nome atual (antes usava o perfil de quando a tela abriu).
+
 ### Status da verificação
 - Functions (TypeScript): `tsc` passou sem erros.
 - App Android: **não compilado ainda**. Revisei o código manualmente, mas o primeiro build no Android Studio pode apontar ajustes pequenos.
-- Regras do Firestore: não testadas no emulador (também precisa de Java).
+- Regras do Firestore: **15 testes passando no emulador** (2026-09-28), `cd firebase/functions && npm run test:rules`. Precisa de Java 11+ no PATH (usei um JRE portátil só para rodar).
 
 ## Histórico
 
@@ -212,3 +221,4 @@ Supabase
 - **2026-09-22**: proposta de refatoração para backend (Supabase + FCM).
 - **2026-09-22**: escolhido o Firebase; criado `quadra-manaira-app/` (app Kotlin/Compose + regras + Cloud Functions). Firebase ainda não criado.
 - **2026-09-22**: criado `PENDENCIAS.md` com tudo o que falta (configuração, testes, problemas conhecidos, publicação).
+- **2026-09-28**: resolvidos os itens de código da seção 3 do `PENDENCIAS.md` (privacidade, excluir conta, denunciar/bloquear, regras de chat e slots, limpezas, push duplicado, silenciar avisos) + testes das regras no emulador. App Android ainda não compilado.

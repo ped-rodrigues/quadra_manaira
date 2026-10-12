@@ -23,18 +23,54 @@ service cloud.firestore {
 
     function validTime(s) {
       // Só horários cheios ou meia-hora, das 06:00 às 22:00.
-      return s is string && s.matches('^(0[6-9]|1\\d|2[0-2]):(00|30)$');
+      return s is string && s.matches('^((0[6-9]|1\\d|2[0-1]):(00|30)|22:00)$');
+    }
+
+    function minutes(t) {
+      return int(t[0:2]) * 60 + int(t[3:5]);
+    }
+
+    // Id do i-ésimo bloco de 30 min a partir de `start` (ex.: 2026-10-01_08:30).
+    function slotKey(date, start, i) {
+      let half = start[3:5] == '30';
+      let h = int(start[0:2]) + (half ? [0, 1, 1, 2, 2, 3] : [0, 0, 1, 1, 2, 2])[i];
+      let m = (half ? ['30', '00', '30', '00', '30', '00'] : ['00', '30', '00', '30', '00', '30'])[i];
+      return date + '_' + (h < 10 ? '0' : '') + string(h) + ':' + m;
+    }
+
+    // O bloco i do agendamento existe e aponta pra ele (ou o agendamento acaba antes dele).
+    function slotCovered(b, bookingId, i) {
+      return minutes(b.startTime) + 30 * i >= minutes(b.endTime)
+        || getAfter(/databases/$(database)/documents/slots/$(slotKey(b.date, b.startTime, i))).data.bookingId == bookingId;
+    }
+
+    function blockedBy(uid) {
+      return exists(/databases/$(database)/documents/users/$(uid)/private/data)
+        && request.auth.uid in get(/databases/$(database)/documents/users/$(uid)/private/data).data.get('blocked', []);
     }
 
     // ---------- Usuários ----------
+    // `users/{uid}` é público para quem está logado: só nome, avatar, esporte e dia/mês do aniversário.
+    // E-mail, data de nascimento completa e bloqueios ficam em `users/{uid}/private/data`.
     match /users/{uid} {
       allow read: if signedIn();
       allow create, update: if isUser(uid)
+        && data().keys().hasOnly(['name', 'nameLower', 'birthDayMonth', 'sport', 'avatar', 'createdAt'])
         && data().name is string && data().name.size() >= 2 && data().name.size() <= 60
         && data().nameLower == data().name.lower()
-        && data().email == request.auth.token.email
+        && data().birthDayMonth is string && data().birthDayMonth.matches('^(\\d{2}/\\d{2})?$')
         && data().sport in ['FUTEBOL', 'BASQUETE', 'VOLEI_PRAIA', 'GINASTICA'];
       allow delete: if false;
+
+      match /private/{doc} {
+        allow read: if isUser(uid);
+        allow create, update: if isUser(uid) && doc == 'data'
+          && data().keys().hasOnly(['email', 'birthDate', 'blocked'])
+          && data().get('email', '') == request.auth.token.get('email', '')
+          && data().get('birthDate', '') is string && data().get('birthDate', '').size() <= 10
+          && data().get('blocked', []) is list && data().get('blocked', []).size() <= 500;
+        allow delete: if false;
+      }
 
       // Tokens de push dos aparelhos do usuário.
       match /tokens/{token} {
@@ -53,16 +89,20 @@ service cloud.firestore {
     match /bookings/{bookingId} {
       allow read: if signedIn();
 
-      // Só cria em nome próprio e só se o bloco inicial de horário foi reservado na mesma transação.
+      // Só cria em nome próprio, no máximo 3h, e só se TODOS os blocos de 30 min
+      // do intervalo foram reservados na mesma transação.
       allow create: if signedIn()
         && data().organizerId == request.auth.uid
         && data().status == 'CONFIRMED'
         && data().reminderSent == false
         && validDate(data().date) && validTime(data().startTime) && validTime(data().endTime)
         && data().endTime > data().startTime
+        && minutes(data().endTime) - minutes(data().startTime) <= 180
         && data().sport in ['FUTEBOL', 'BASQUETE', 'VOLEI_PRAIA', 'GINASTICA']
         && data().notes is string && data().notes.size() <= 300
-        && getAfter(/databases/$(database)/documents/slots/$(data().date + '_' + data().startTime)).data.bookingId == bookingId;
+        && slotCovered(data(), bookingId, 0) && slotCovered(data(), bookingId, 1)
+        && slotCovered(data(), bookingId, 2) && slotCovered(data(), bookingId, 3)
+        && slotCovered(data(), bookingId, 4) && slotCovered(data(), bookingId, 5);
 
       // Só o organizador cancela, e cancelar é a única alteração permitida.
       allow update: if signedIn()
@@ -74,12 +114,22 @@ service cloud.firestore {
     }
 
     // Blocos de 30 min ocupados. Não podem ser sobrescritos (update proibido) → impede conflito de horário.
+    // Cada bloco precisa estar dentro do intervalo (mesma data, início ≤ bloco < fim) de um agendamento
+    // confirmado do próprio usuário.
     match /slots/{slotId} {
+      function slotInBooking(b) {
+        let day = slotId.split('_')[0];
+        let time = slotId.split('_')[1];
+        return b.organizerId == request.auth.uid && b.status == 'CONFIRMED'
+          && b.date == day && data().date == day
+          && validTime(time) && time >= b.startTime && time < b.endTime;
+      }
+
       allow read: if signedIn();
       allow create: if signedIn()
         && data().organizerId == request.auth.uid
         && slotId.matches('^\\d{4}-\\d{2}-\\d{2}_\\d{2}:\\d{2}$')
-        && getAfter(/databases/$(database)/documents/bookings/$(data().bookingId)).data.organizerId == request.auth.uid;
+        && slotInBooking(getAfter(/databases/$(database)/documents/bookings/$(data().bookingId)).data);
       allow update: if false;
       allow delete: if signedIn() && resource.data.organizerId == request.auth.uid;
     }
@@ -121,14 +171,51 @@ service cloud.firestore {
     // ---------- Chat ----------
     // O id da conversa é "uidA_uidB" (ordenados), então dá pra saber os participantes pelo id.
     match /conversations/{convId} {
+      function ids() {
+        return convId.split('_');
+      }
+
       function isParticipant() {
-        return signedIn() && request.auth.uid in convId.split('_');
+        return signedIn() && request.auth.uid in ids();
+      }
+
+      function otherId() {
+        return ids()[0] == request.auth.uid ? ids()[1] : ids()[0];
+      }
+
+      function nameOf(uid) {
+        return get(/databases/$(database)/documents/users/$(uid)).data.name;
+      }
+
+      // Nomes: ou não mudaram, ou são exatamente os nomes atuais dos dois perfis.
+      function validNames(before) {
+        return data().names == before
+          || (data().names.keys().hasOnly(ids())
+            && data().names[request.auth.uid] == nameOf(request.auth.uid)
+            && data().names[otherId()] == nameOf(otherId()));
+      }
+
+      // Não lidas: o próprio contador só pode zerar; o do outro só pode subir 1.
+      function validUnread(before) {
+        let u = data().unread;
+        let me = request.auth.uid;
+        return u.keys().hasOnly(ids())
+          && (u.get(me, 0) == 0 || u.get(me, 0) == before.get(me, 0))
+          && (u.get(otherId(), 0) == before.get(otherId(), 0) || u.get(otherId(), 0) == before.get(otherId(), 0) + 1);
+      }
+
+      function validConversation(beforeNames, beforeUnread) {
+        return isParticipant()
+          && data().participants == ids()
+          && data().keys().hasOnly(['participants', 'names', 'lastMessage', 'lastSenderId', 'lastAt', 'unread'])
+          && validNames(beforeNames)
+          && validUnread(beforeUnread);
       }
 
       allow get: if isParticipant();
       allow list: if signedIn() && request.auth.uid in resource.data.participants;
-      allow create, update: if isParticipant()
-        && data().participants == convId.split('_');
+      allow create: if validConversation({}, {});
+      allow update: if validConversation(resource.data.get('names', {}), resource.data.get('unread', {}));
       allow delete: if false;
 
       match /messages/{messageId} {
@@ -137,9 +224,23 @@ service cloud.firestore {
           && data().senderId == request.auth.uid
           && data().receiverId in convId.split('_')
           && data().receiverId != request.auth.uid
+          && !blockedBy(data().receiverId)
           && data().text is string && data().text.size() >= 1 && data().text.size() <= 2000;
         allow update, delete: if false;
       }
+    }
+
+    // ---------- Denúncias ----------
+    // Qualquer usuário denuncia; só a administração lê (pelo console do Firebase).
+    match /reports/{reportId} {
+      allow create: if signedIn()
+        && data().keys().hasOnly(['reporterId', 'type', 'targetId', 'targetUserId', 'text', 'createdAt'])
+        && data().reporterId == request.auth.uid
+        && data().type in ['POST', 'CHAT']
+        && data().targetId is string && data().targetId.size() <= 200
+        && data().targetUserId is string
+        && data().text is string && data().text.size() <= 2000;
+      allow read, update, delete: if false;
     }
   }
 }

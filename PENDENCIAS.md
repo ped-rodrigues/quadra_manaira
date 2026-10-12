@@ -1,6 +1,6 @@
 # Quadra de Manaíra: o que falta fazer
 
-_Criado em: 2026-09-22 · App novo em `quadra-manaira-app/` · Contexto e histórico em `NOTAS.md`_
+_Criado em: 2026-09-22 · Atualizado em: 2026-09-28 · App novo em `quadra-manaira-app/` · Contexto e histórico em `NOTAS.md`_
 
 Legenda de prioridade: 🔴 bloqueia o lançamento · 🟡 importante · 🟢 melhoria
 
@@ -40,20 +40,20 @@ Legenda de prioridade: 🔴 bloqueia o lançamento · 🟡 importante · 🟢 me
   - [ ] Aniversário (cadastrar alguém com a data de hoje e rodar a Function manualmente)
   - [ ] Modo avião: o app abre com o cache e sincroniza ao voltar a conexão
   - [ ] Tema escuro, tela pequena, fonte grande do sistema
-- [ ] 🟡 Testar as **regras do Firestore no emulador** (`firebase emulators:start`, precisa de Java), tentando burlar: criar agendamento em nome de outro, curtir duas vezes, ler conversa alheia etc.
+- [x] 🟡 Testar as **regras do Firestore no emulador** (`firebase emulators:start`, precisa de Java), tentando burlar: criar agendamento em nome de outro, curtir duas vezes, ler conversa alheia etc. ✅ 2026-09-28: 15 testes em `firebase/functions/test/rules.test.mjs` (`npm run test:rules`, precisa de Java 11+)
 
 ## 3. Problemas conhecidos no app novo (corrigir)
 
-- [ ] 🔴 **Privacidade: e-mail e data de nascimento de todos ficam visíveis** para qualquer usuário logado (`users/{uid}` tem leitura liberada). Separar em `users/{uid}` (público: nome, avatar, esporte, `birthDayMonth`) e `users/{uid}/private/data` (e-mail, nascimento completo) e ajustar as regras
-- [ ] 🔴 **Excluir conta**: a Play Store exige que o usuário possa apagar a conta e os dados dentro do app (e por um link na web). Implementar tela + Function que apaga perfil, posts, curtidas, tokens e o usuário do Auth
-- [ ] 🔴 **Denunciar/bloquear conteúdo**: mural e chat são conteúdo gerado por usuário, e a política da Play exige denúncia de posts/mensagens e bloqueio de usuários. Hoje não existe
-- [ ] 🟡 Chat: um participante pode gravar qualquer valor em `names` e `unread` da conversa. Restringir nas regras (só o próprio nome; só incrementar o `unread` do outro ou zerar o próprio)
-- [ ] 🟡 Regras de `slots`: não validam que a data no id do slot é a mesma do agendamento nem que cobrem exatamente o intervalo início→fim (só o primeiro bloco é conferido). Reforçar ou mover a criação para uma Function
-- [ ] 🟡 Post apagado deixa as curtidas órfãs em `posts/{id}/likes`. Criar Function `onDelete` para limpar
-- [ ] 🟡 Limpeza periódica: agendamentos e `slots` de datas passadas se acumulam. Criar Function mensal
-- [ ] 🟡 Quem agenda recebe **duas** notificações (a pessoal + a do tópico geral). Excluir o organizador do broadcast ou tirar uma das duas
-- [ ] 🟡 Broadcast de todo agendamento para todo mundo pode virar spam. Criar opção nas configurações para silenciar ("só meus jogos e mensagens")
-- [ ] 🟡 Nome desatualizado: `ChatViewModel`/`MuralViewModel` guardam o perfil do momento em que abriram. Se o usuário editar o nome, as próximas mensagens/posts saem com o nome antigo até reabrir a tela
+- [x] 🔴 **Privacidade: e-mail e data de nascimento de todos ficam visíveis** para qualquer usuário logado (`users/{uid}` tem leitura liberada). Separar em `users/{uid}` (público: nome, avatar, esporte, `birthDayMonth`) e `users/{uid}/private/data` (e-mail, nascimento completo) e ajustar as regras ✅ 2026-09-28: feito (`users/{uid}/private/data`)
+- [x] 🔴 **Excluir conta**: a Play Store exige que o usuário possa apagar a conta e os dados dentro do app (e por um link na web). Implementar tela + Function que apaga perfil, posts, curtidas, tokens e o usuário do Auth ✅ 2026-09-28: botão no Perfil + Function `onUserDeleted`. Falta o **link na web** (pode ser um e-mail de contato na política de privacidade)
+- [x] 🔴 **Denunciar/bloquear conteúdo**: mural e chat são conteúdo gerado por usuário, e a política da Play exige denúncia de posts/mensagens e bloqueio de usuários. Hoje não existe ✅ 2026-09-28: menu ⋮ no post e na conversa; denúncias vão para a coleção `reports` (ver no console); bloqueio esconde posts/conversas e impede mensagens nas regras
+- [x] 🟡 Chat: um participante pode gravar qualquer valor em `names` e `unread` da conversa. Restringir nas regras (só o próprio nome; só incrementar o `unread` do outro ou zerar o próprio) ✅ 2026-09-28
+- [x] 🟡 Regras de `slots`: não validam que a data no id do slot é a mesma do agendamento nem que cobrem exatamente o intervalo início→fim (só o primeiro bloco é conferido). Reforçar ou mover a criação para uma Function ✅ 2026-09-28: todos os blocos do intervalo são conferidos nas regras
+- [x] 🟡 Post apagado deixa as curtidas órfãs em `posts/{id}/likes`. Criar Function `onDelete` para limpar ✅ 2026-09-28: `onPostDeleted`
+- [x] 🟡 Limpeza periódica: agendamentos e `slots` de datas passadas se acumulam. Criar Function mensal ✅ 2026-09-28: `monthlyCleanup` (dia 1º, 04:00)
+- [x] 🟡 Quem agenda recebe **duas** notificações (a pessoal + a do tópico geral). Excluir o organizador do broadcast ou tirar uma das duas ✅ 2026-09-28: aviso geral agora é só `data` com `excludeUid`; o app esconde de quem causou o evento (vale também para cancelamento e aniversário)
+- [x] 🟡 Broadcast de todo agendamento para todo mundo pode virar spam. Criar opção nas configurações para silenciar ("só meus jogos e mensagens") ✅ 2026-09-28: chave "Avisos gerais da quadra" no Perfil
+- [x] 🟡 Nome desatualizado: `ChatViewModel`/`MuralViewModel` guardam o perfil do momento em que abriram. Se o usuário editar o nome, as próximas mensagens/posts saem com o nome antigo até reabrir a tela ✅ 2026-09-28: o mural já usava o perfil atual; o chat passou a usar também
 - [ ] 🟡 Mudança de nome não se propaga para posts, agendamentos e conversas antigos (que guardam `authorName`/`organizerName`). Aceitar isso ou criar uma Function que atualiza
 - [ ] 🟡 **Firebase App Check** (Play Integrity) para bloquear chamadas que não vêm do app oficial
 - [ ] 🟢 Limite de uso por usuário (ex.: máximo de agendamentos futuros por pessoa), para ninguém reservar a semana toda
@@ -82,8 +82,8 @@ Legenda de prioridade: 🔴 bloqueia o lançamento · 🟡 importante · 🟢 me
 ## 6. Qualidade de código (depois que funcionar)
 
 - [ ] 🟢 Testes unitários (validações de agendamento, `DateUtils.slotsBetween`, validação de data de nascimento)
-- [ ] 🟢 Testes das regras com `@firebase/rules-unit-testing`
-- [ ] 🟢 Colocar o projeto no **git** (GitHub/GitLab); hoje está só numa pasta do OneDrive
+- [x] 🟢 Testes das regras com `@firebase/rules-unit-testing` ✅ 2026-09-28
+- [ ] 🟢 Colocar o projeto no **git** (GitHub/GitLab); hoje está só numa pasta do OneDrive _(já existe repositório git local; falta criar o remoto no GitHub e dar push)_
 - [ ] 🟢 CI (GitHub Actions) para compilar o app e rodar os testes a cada push
 - [ ] 🟢 Firebase Crashlytics para ver erros dos usuários
 - [ ] 🟢 Acessibilidade: `contentDescription` nos ícones restantes, contraste das cores no tema claro

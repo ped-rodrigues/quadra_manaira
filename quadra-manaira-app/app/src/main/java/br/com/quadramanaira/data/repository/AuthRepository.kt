@@ -11,10 +11,10 @@ import br.com.quadramanaira.util.UserMessageException
 import com.google.android.libraries.identity.googleid.GetSignInWithGoogleOption
 import com.google.android.libraries.identity.googleid.GoogleIdTokenCredential
 import com.google.firebase.auth.FirebaseAuth
+import com.google.firebase.auth.FirebaseAuthRecentLoginRequiredException
 import com.google.firebase.auth.FirebaseUser
 import com.google.firebase.auth.GoogleAuthProvider
 import com.google.firebase.auth.userProfileChangeRequest
-import com.google.firebase.firestore.FieldValue
 import com.google.firebase.firestore.FirebaseFirestore
 import kotlinx.coroutines.channels.awaitClose
 import kotlinx.coroutines.flow.Flow
@@ -110,19 +110,27 @@ class AuthRepository(
         }
     }
 
-    private suspend fun writeProfile(user: FirebaseUser, name: String, birthDate: String, sport: Sport, avatar: String) {
-        db.collection("users").document(user.uid).set(
-            mapOf(
-                "name" to name,
-                "nameLower" to name.lowercase(),
-                "email" to (user.email ?: ""),
-                "birthDate" to birthDate,
-                "birthDayMonth" to DateUtils.birthDayMonth(birthDate),
-                "sport" to sport.name,
-                "avatar" to Avatars.from(avatar),
-                "createdAt" to FieldValue.serverTimestamp(),
+    /**
+     * Exclui a conta (exigência da Play Store). Apaga o usuário do Auth; a Cloud Function
+     * `onUserDeleted` apaga os dados dele no Firestore. O Firebase exige login recente.
+     */
+    suspend fun deleteAccount(): Result<Unit> = runCatching {
+        val user = auth.currentUser ?: throw UserMessageException("Faça login.")
+        try {
+            user.delete().await()
+        } catch (_: FirebaseAuthRecentLoginRequiredException) {
+            throw UserMessageException("Por segurança, saia da conta, entre de novo e repita a exclusão.")
+        }
+        runCatching { users.forgetDevice() }
+        runCatching {
+            CredentialManager.create(appContext).clearCredentialState(
+                androidx.credentials.ClearCredentialStateRequest()
             )
-        ).await()
+        }
+    }
+
+    private suspend fun writeProfile(user: FirebaseUser, name: String, birthDate: String, sport: Sport, avatar: String) {
+        users.writeProfile(user.uid, user.email.orEmpty(), name, birthDate, sport, avatar, isNew = true)
     }
 
     private fun webClientId(): String? {

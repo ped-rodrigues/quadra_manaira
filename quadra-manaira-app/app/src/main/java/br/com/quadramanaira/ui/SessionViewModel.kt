@@ -30,7 +30,7 @@ class SessionViewModel(private val repos: Repos) : ViewModel() {
             if (uid == null) {
                 flowOf(SessionState.SignedOut)
             } else {
-                repos.users.profile(uid)
+                repos.users.myProfile(uid)
                     .map { p -> if (p != null && p.isComplete) SessionState.Ready(p) else SessionState.NeedsProfile(uid, p) }
                     .catch { emit(SessionState.NeedsProfile(uid, null)) }
             }

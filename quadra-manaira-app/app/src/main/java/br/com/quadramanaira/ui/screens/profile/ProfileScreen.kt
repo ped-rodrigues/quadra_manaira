@@ -11,16 +11,19 @@ import androidx.compose.foundation.layout.padding
 import androidx.compose.foundation.layout.width
 import androidx.compose.foundation.rememberScrollState
 import androidx.compose.foundation.verticalScroll
+import androidx.compose.material3.AlertDialog
 import androidx.compose.material3.Button
 import androidx.compose.material3.Card
 import androidx.compose.material3.MaterialTheme
 import androidx.compose.material3.OutlinedButton
 import androidx.compose.material3.OutlinedTextField
+import androidx.compose.material3.Switch
 import androidx.compose.material3.Text
 import androidx.compose.material3.TextButton
 import androidx.compose.runtime.Composable
 import androidx.compose.runtime.getValue
 import androidx.compose.runtime.mutableStateOf
+import androidx.compose.runtime.remember
 import androidx.compose.runtime.saveable.rememberSaveable
 import androidx.compose.runtime.setValue
 import androidx.compose.ui.Alignment
@@ -36,6 +39,7 @@ import br.com.quadramanaira.Repos
 import br.com.quadramanaira.data.model.Avatars
 import br.com.quadramanaira.data.model.Sport
 import br.com.quadramanaira.data.model.UserProfile
+import br.com.quadramanaira.push.Notifications
 import br.com.quadramanaira.ui.components.AvatarBubble
 import br.com.quadramanaira.ui.components.AvatarSelector
 import br.com.quadramanaira.ui.components.SportSelector
@@ -67,12 +71,21 @@ class ProfileViewModel(private val repos: Repos) : ViewModel() {
     fun logout() {
         viewModelScope.launch { repos.auth.logout() }
     }
+
+    fun deleteAccount() {
+        viewModelScope.launch {
+            repos.auth.deleteAccount().onFailure { _message.value = it.toUserMessage() }
+        }
+    }
 }
 
 @Composable
 fun ProfileScreen(vm: ProfileViewModel, me: UserProfile, contentPadding: PaddingValues, onOpenMap: () -> Unit) {
     val context = LocalContext.current
     var editing by rememberSaveable { mutableStateOf(false) }
+    var broadcasts by remember { mutableStateOf(Notifications.broadcastsEnabled(context)) }
+    var confirmDelete by remember { mutableStateOf(false) }
+    val message by vm.message.collectAsStateWithLifecycle()
 
     Column(
         Modifier
@@ -101,13 +114,44 @@ fun ProfileScreen(vm: ProfileViewModel, me: UserProfile, contentPadding: Padding
         Text("Recursos & compartilhamento", style = MaterialTheme.typography.titleMedium, color = MaterialTheme.colorScheme.primary)
         OutlinedButton(onClick = onOpenMap, modifier = Modifier.fillMaxWidth()) { Text("📍 Localização da quadra") }
         OutlinedButton(onClick = { QuadraInfo.share(context) }, modifier = Modifier.fillMaxWidth()) { Text("Compartilhar no WhatsApp") }
+
+        Text("Notificações", style = MaterialTheme.typography.titleMedium, color = MaterialTheme.colorScheme.primary)
+        Row(verticalAlignment = Alignment.CenterVertically) {
+            Column(Modifier.weight(1f)) {
+                Text("Avisos gerais da quadra")
+                Text("Novos jogos, cancelamentos e aniversários. Desligado: só seus jogos e mensagens.", style = MaterialTheme.typography.bodySmall)
+            }
+            Switch(checked = broadcasts, onCheckedChange = {
+                broadcasts = it
+                Notifications.setBroadcastsEnabled(context, it)
+            })
+        }
+
         TextButton(onClick = vm::logout, modifier = Modifier.fillMaxWidth()) {
             Text("Sair da conta", color = MaterialTheme.colorScheme.error)
         }
+        TextButton(onClick = { confirmDelete = true }, modifier = Modifier.fillMaxWidth()) {
+            Text("Excluir minha conta", color = MaterialTheme.colorScheme.error)
+        }
+        if (!editing) message?.let { Text(it, color = MaterialTheme.colorScheme.primary) }
         Text(
             "Quadra de Manaíra • Versão ${BuildConfig.VERSION_NAME}",
             style = MaterialTheme.typography.labelSmall,
             modifier = Modifier.align(Alignment.CenterHorizontally),
+        )
+    }
+
+    if (confirmDelete) {
+        AlertDialog(
+            onDismissRequest = { confirmDelete = false },
+            title = { Text("Excluir sua conta?") },
+            text = { Text("Seu perfil, publicações, curtidas, conversas e agendamentos serão apagados. Jogos futuros serão cancelados. Não dá pra desfazer.") },
+            confirmButton = {
+                TextButton(onClick = { confirmDelete = false; vm.deleteAccount() }) {
+                    Text("Excluir", color = MaterialTheme.colorScheme.error)
+                }
+            },
+            dismissButton = { TextButton(onClick = { confirmDelete = false }) { Text("Cancelar") } },
         )
     }
 }

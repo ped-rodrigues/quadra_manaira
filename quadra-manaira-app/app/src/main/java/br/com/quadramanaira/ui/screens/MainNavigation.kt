@@ -76,7 +76,7 @@ private fun HomeScaffold(me: UserProfile, nav: NavHostController) {
     val chatListVm = repoViewModel(key = "chats_${me.id}") { repos, _ -> ChatListViewModel(repos, me) }
     val unreadNotifications by notificationsVm.unreadCount.collectAsStateWithLifecycle()
     val conversations by chatListVm.conversations.collectAsStateWithLifecycle()
-    val unreadChats = conversations.count { it.unreadFor(me.id) > 0 }
+    val unreadChats = conversations.count { it.unreadFor(me.id) > 0 && it.otherId(me.id) !in me.blocked }
 
     Scaffold(
         topBar = {

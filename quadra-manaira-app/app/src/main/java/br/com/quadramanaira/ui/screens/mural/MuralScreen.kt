@@ -1,6 +1,8 @@
 package br.com.quadramanaira.ui.screens.mural
 
+import android.widget.Toast
 import androidx.compose.foundation.layout.Arrangement
+import androidx.compose.foundation.layout.Box
 import androidx.compose.foundation.layout.Column
 import androidx.compose.foundation.layout.PaddingValues
 import androidx.compose.foundation.layout.Row
@@ -15,9 +17,12 @@ import androidx.compose.material.icons.Icons
 import androidx.compose.material.icons.filled.Delete
 import androidx.compose.material.icons.filled.Favorite
 import androidx.compose.material.icons.filled.FavoriteBorder
+import androidx.compose.material.icons.filled.MoreVert
 import androidx.compose.material3.AlertDialog
 import androidx.compose.material3.Button
 import androidx.compose.material3.Card
+import androidx.compose.material3.DropdownMenu
+import androidx.compose.material3.DropdownMenuItem
 import androidx.compose.material3.Icon
 import androidx.compose.material3.IconButton
 import androidx.compose.material3.MaterialTheme
@@ -32,6 +37,7 @@ import androidx.compose.runtime.saveable.rememberSaveable
 import androidx.compose.runtime.setValue
 import androidx.compose.ui.Alignment
 import androidx.compose.ui.Modifier
+import androidx.compose.ui.platform.LocalContext
 import androidx.compose.ui.text.font.FontWeight
 import androidx.compose.ui.unit.dp
 import androidx.lifecycle.ViewModel
@@ -87,6 +93,20 @@ class MuralViewModel(private val repos: Repos, private val me: UserProfile) : Vi
             repos.mural.delete(post).onFailure { _error.value = it.toUserMessage() }
         }
     }
+
+    fun report(post: Post, onDone: () -> Unit) {
+        viewModelScope.launch {
+            repos.users.report("POST", post.id, post.authorId, post.text)
+                .onSuccess { onDone() }
+                .onFailure { _error.value = it.toUserMessage() }
+        }
+    }
+
+    fun block(authorId: String) {
+        viewModelScope.launch {
+            repos.users.setBlocked(authorId, true).onFailure { _error.value = it.toUserMessage() }
+        }
+    }
 }
 
 @Composable
@@ -97,6 +117,8 @@ fun MuralScreen(vm: MuralViewModel, me: UserProfile, contentPadding: PaddingValu
     var text by rememberSaveable { mutableStateOf("") }
     var sport by rememberSaveable { mutableStateOf(me.sport) }
     var toDelete by remember { mutableStateOf<Post?>(null) }
+    var toReport by remember { mutableStateOf<Post?>(null) }
+    val context = LocalContext.current
 
     LazyColumn(
         modifier = Modifier.fillMaxSize(),
@@ -128,14 +150,36 @@ fun MuralScreen(vm: MuralViewModel, me: UserProfile, contentPadding: PaddingValu
                 }
             }
         }
-        val list = posts
+        val list = posts?.filter { it.authorId !in me.blocked }
         when {
             list == null -> item { LoadingBox(Modifier.padding(32.dp)) }
             list.isEmpty() -> item { EmptyState("O mural está vazio. Seja o primeiro a publicar!") }
             else -> items(list, key = { it.id }) { post ->
-                PostCard(post, isMine = post.authorId == me.id, onLike = { vm.toggleLike(post) }, onDelete = { toDelete = post })
+                PostCard(
+                    post,
+                    isMine = post.authorId == me.id,
+                    onLike = { vm.toggleLike(post) },
+                    onDelete = { toDelete = post },
+                    onReport = { toReport = post },
+                    onBlock = { vm.block(post.authorId) },
+                )
             }
         }
+    }
+
+    toReport?.let { post ->
+        AlertDialog(
+            onDismissRequest = { toReport = null },
+            title = { Text("Denunciar publicação?") },
+            text = { Text("A administração da quadra vai analisar o conteúdo.") },
+            confirmButton = {
+                TextButton(onClick = {
+                    vm.report(post) { Toast.makeText(context, "Denúncia enviada. Obrigado!", Toast.LENGTH_SHORT).show() }
+                    toReport = null
+                }) { Text("Denunciar") }
+            },
+            dismissButton = { TextButton(onClick = { toReport = null }) { Text("Cancelar") } },
+        )
     }
 
     toDelete?.let { post ->
@@ -149,7 +193,15 @@ fun MuralScreen(vm: MuralViewModel, me: UserProfile, contentPadding: PaddingValu
 }
 
 @Composable
-private fun PostCard(post: Post, isMine: Boolean, onLike: () -> Unit, onDelete: () -> Unit) {
+private fun PostCard(
+    post: Post,
+    isMine: Boolean,
+    onLike: () -> Unit,
+    onDelete: () -> Unit,
+    onReport: () -> Unit,
+    onBlock: () -> Unit,
+) {
+    var menuOpen by remember { mutableStateOf(false) }
     Card(Modifier.fillMaxWidth()) {
         Column(Modifier.padding(16.dp)) {
             Row(verticalAlignment = Alignment.CenterVertically) {
@@ -162,7 +214,17 @@ private fun PostCard(post: Post, isMine: Boolean, onLike: () -> Unit, onDelete: 
                         style = MaterialTheme.typography.bodySmall,
                     )
                 }
-                if (isMine) IconButton(onClick = onDelete) { Icon(Icons.Default.Delete, "Apagar") }
+                if (isMine) {
+                    IconButton(onClick = onDelete) { Icon(Icons.Default.Delete, "Apagar") }
+                } else {
+                    Box {
+                        IconButton(onClick = { menuOpen = true }) { Icon(Icons.Default.MoreVert, "Mais opções") }
+                        DropdownMenu(expanded = menuOpen, onDismissRequest = { menuOpen = false }) {
+                            DropdownMenuItem(text = { Text("Denunciar") }, onClick = { menuOpen = false; onReport() })
+                            DropdownMenuItem(text = { Text("Bloquear ${post.authorName}") }, onClick = { menuOpen = false; onBlock() })
+                        }
+                    }
+                }
             }
             Text(post.text, modifier = Modifier.padding(vertical = 8.dp))
             Row(verticalAlignment = Alignment.CenterVertically) {

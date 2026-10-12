@@ -13,3 +13,4 @@ firebase/functions/lib/
 firebase/.firebase/
 *.jks
 *.keystore
+firebase/functions/firestore-debug.log

@@ -25,6 +25,8 @@ data class UserProfile(
     val birthDate: String,
     val sport: Sport,
     val avatar: String,
+    /** Ids de atletas que eu bloqueei (só preenchido no meu próprio perfil). */
+    val blocked: Set<String> = emptySet(),
 ) {
     val isComplete: Boolean get() = name.isNotBlank() && birthDate.isNotBlank()
 }

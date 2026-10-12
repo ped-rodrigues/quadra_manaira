@@ -7,8 +7,8 @@ import kotlinx.coroutines.launch
 
 /**
  * Recebe push do Firebase Cloud Messaging.
- * Com o app em segundo plano o Android mostra a notificação sozinho;
- * aqui tratamos o caso do app aberto e a renovação de token.
+ * Push pessoal com o app em segundo plano o Android mostra sozinho;
+ * aqui tratamos o app aberto, os avisos gerais (só `data`) e a renovação de token.
  */
 class QuadraMessagingService : FirebaseMessagingService() {
 
@@ -22,6 +22,12 @@ class QuadraMessagingService : FirebaseMessagingService() {
     }
 
     override fun onMessageReceived(message: RemoteMessage) {
+        // Avisos gerais chegam pelo tópico só com `data`, então passam sempre por aqui.
+        if (message.from?.startsWith("/topics/") == true) {
+            if (!Notifications.broadcastsEnabled(this)) return
+            val me = (application as QuadraApp).container.repos?.auth?.currentUid
+            if (me != null && message.data["excludeUid"] == me) return // já recebeu o aviso pessoal
+        }
         val title = message.notification?.title ?: message.data["title"] ?: return
         val body = message.notification?.body ?: message.data["body"].orEmpty()
         val key = message.data["key"] ?: message.messageId ?: title

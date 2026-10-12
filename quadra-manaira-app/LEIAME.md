@@ -57,10 +57,14 @@ Para gerar o APK de release: *Build → Generate Signed App Bundle / APK* (crie 
 
 | Coleção | Conteúdo |
 |---|---|
-| `users/{uid}` | nome, e-mail, nascimento, esporte, avatar |
+| `users/{uid}` | perfil público: nome, esporte, avatar, dia/mês do aniversário |
+| `users/{uid}/private/data` | e-mail, data de nascimento, bloqueados (só o dono lê) |
 | `users/{uid}/tokens/{token}` | aparelhos para push |
 | `users/{uid}/notifications/{id}` | histórico de notificações (criado pelas Functions) |
 | `bookings/{id}` | agendamentos (data, horário, esporte, organizador, status) |
 | `slots/{data}_{HH:mm}` | blocos de 30 min ocupados; impedem conflito de horário |
 | `posts/{id}` + `posts/{id}/likes/{uid}` | mural e curtidas por usuário |
 | `conversations/{uidA_uidB}` + `/messages/{id}` | chat privado, com não lidas por usuário |
+| `reports/{id}` | denúncias de posts/conversas (só leitura pelo console) |
+
+Testes das regras: `cd firebase/functions && npm install && npm run test:rules` (precisa de Java 11+).

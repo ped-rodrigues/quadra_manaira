@@ -1,5 +1,6 @@
 package br.com.quadramanaira.ui.screens.chat
 
+import android.widget.Toast
 import androidx.compose.foundation.background
 import androidx.compose.foundation.clickable
 import androidx.compose.foundation.layout.Arrangement
@@ -20,7 +21,11 @@ import androidx.compose.foundation.shape.RoundedCornerShape
 import androidx.compose.material.icons.Icons
 import androidx.compose.material.icons.automirrored.filled.ArrowBack
 import androidx.compose.material.icons.automirrored.filled.Send
+import androidx.compose.material.icons.filled.MoreVert
+import androidx.compose.material3.AlertDialog
 import androidx.compose.material3.Badge
+import androidx.compose.material3.DropdownMenu
+import androidx.compose.material3.DropdownMenuItem
 import androidx.compose.material3.ExperimentalMaterial3Api
 import androidx.compose.material3.HorizontalDivider
 import androidx.compose.material3.Icon
@@ -30,15 +35,18 @@ import androidx.compose.material3.MaterialTheme
 import androidx.compose.material3.OutlinedTextField
 import androidx.compose.material3.Scaffold
 import androidx.compose.material3.Text
+import androidx.compose.material3.TextButton
 import androidx.compose.material3.TopAppBar
 import androidx.compose.runtime.Composable
 import androidx.compose.runtime.LaunchedEffect
 import androidx.compose.runtime.getValue
 import androidx.compose.runtime.mutableStateOf
+import androidx.compose.runtime.remember
 import androidx.compose.runtime.saveable.rememberSaveable
 import androidx.compose.runtime.setValue
 import androidx.compose.ui.Alignment
 import androidx.compose.ui.Modifier
+import androidx.compose.ui.platform.LocalContext
 import androidx.compose.ui.text.font.FontWeight
 import androidx.compose.ui.text.style.TextOverflow
 import androidx.compose.ui.unit.dp
@@ -79,7 +87,7 @@ class ChatListViewModel(repos: Repos, me: UserProfile) : ViewModel() {
 
 @Composable
 fun ChatListScreen(vm: ChatListViewModel, me: UserProfile, contentPadding: PaddingValues, onOpenChat: (String) -> Unit) {
-    val conversations by vm.conversations.collectAsStateWithLifecycle()
+    val conversations = vm.conversations.collectAsStateWithLifecycle().value.filter { it.otherId(me.id) !in me.blocked }
     val athletes by vm.athletes.collectAsStateWithLifecycle()
 
     LazyColumn(Modifier.fillMaxSize(), contentPadding = contentPadding) {
@@ -111,7 +119,9 @@ fun ChatListScreen(vm: ChatListViewModel, me: UserProfile, contentPadding: Paddi
                 modifier = Modifier.clickable { onOpenChat(user.id) },
                 leadingContent = { AvatarBubble(user.avatar, 40.dp) },
                 headlineContent = { Text(user.name) },
-                supportingContent = { Text("${user.sport.emoji} ${user.sport.label} • Toque para conversar") },
+                supportingContent = {
+                    Text(if (user.id in me.blocked) "🚫 Bloqueado" else "${user.sport.emoji} ${user.sport.label} • Toque para conversar")
+                },
             )
         }
     }
@@ -140,12 +150,31 @@ class ChatViewModel(private val repos: Repos, private val me: UserProfile, other
         }
     }
 
-    fun send(text: String, onSent: () -> Unit) {
+    /** [sender] vem da tela (perfil atual), para a mensagem sair com o nome atualizado. */
+    fun send(sender: UserProfile, text: String, onSent: () -> Unit) {
         val target = other.value ?: return
         viewModelScope.launch {
-            repos.chat.send(me, target, text)
+            repos.chat.send(sender, target, text)
                 .onSuccess { _error.value = null; onSent() }
                 .onFailure { _error.value = it.toUserMessage() }
+        }
+    }
+
+    /** Denuncia a conversa, levando as últimas mensagens do outro atleta como evidência. */
+    fun report(onDone: () -> Unit) {
+        val otherId = other.value?.id ?: return
+        val evidence = messages.value.filter { it.senderId == otherId }.takeLast(20).joinToString("\n") { it.text }
+        viewModelScope.launch {
+            repos.users.report("CHAT", conversationId, otherId, evidence)
+                .onSuccess { onDone() }
+                .onFailure { _error.value = it.toUserMessage() }
+        }
+    }
+
+    fun setBlocked(blocked: Boolean) {
+        val otherId = other.value?.id ?: return
+        viewModelScope.launch {
+            repos.users.setBlocked(otherId, blocked).onFailure { _error.value = it.toUserMessage() }
         }
     }
 }
@@ -157,7 +186,11 @@ fun ChatScreen(vm: ChatViewModel, me: UserProfile, onBack: () -> Unit) {
     val messages by vm.messages.collectAsStateWithLifecycle()
     val error by vm.error.collectAsStateWithLifecycle()
     var text by rememberSaveable { mutableStateOf("") }
+    var menuOpen by remember { mutableStateOf(false) }
+    var confirmReport by remember { mutableStateOf(false) }
     val listState = rememberLazyListState()
+    val context = LocalContext.current
+    val blocked = other?.let { it.id in me.blocked } == true
 
     LaunchedEffect(messages.size) {
         if (messages.isNotEmpty()) listState.animateScrollToItem(messages.lastIndex)
@@ -168,12 +201,26 @@ fun ChatScreen(vm: ChatViewModel, me: UserProfile, onBack: () -> Unit) {
             TopAppBar(
                 title = { Text(other?.name ?: "Conversa") },
                 navigationIcon = { IconButton(onClick = onBack) { Icon(Icons.AutoMirrored.Filled.ArrowBack, "Voltar") } },
+                actions = {
+                    if (other != null) {
+                        IconButton(onClick = { menuOpen = true }) { Icon(Icons.Default.MoreVert, "Mais opções") }
+                        DropdownMenu(expanded = menuOpen, onDismissRequest = { menuOpen = false }) {
+                            DropdownMenuItem(text = { Text("Denunciar conversa") }, onClick = { menuOpen = false; confirmReport = true })
+                            DropdownMenuItem(
+                                text = { Text(if (blocked) "Desbloquear" else "Bloquear") },
+                                onClick = { menuOpen = false; vm.setBlocked(!blocked) },
+                            )
+                        }
+                    }
+                },
             )
         },
         bottomBar = {
             Column(Modifier.navigationBarsPadding().imePadding()) {
                 error?.let { Text(it, color = MaterialTheme.colorScheme.error, modifier = Modifier.padding(horizontal = 16.dp)) }
-                Row(Modifier.padding(8.dp), verticalAlignment = Alignment.CenterVertically) {
+                if (blocked) {
+                    Text("Você bloqueou este atleta. Desbloqueie pelo menu ⋮ para conversar.", Modifier.padding(16.dp))
+                } else Row(Modifier.padding(8.dp), verticalAlignment = Alignment.CenterVertically) {
                     OutlinedTextField(
                         value = text,
                         onValueChange = { if (it.length <= 2000) text = it },
@@ -181,7 +228,7 @@ fun ChatScreen(vm: ChatViewModel, me: UserProfile, onBack: () -> Unit) {
                         modifier = Modifier.weight(1f),
                         maxLines = 4,
                     )
-                    IconButton(onClick = { vm.send(text) { text = "" } }, enabled = text.isNotBlank() && other != null) {
+                    IconButton(onClick = { vm.send(me, text) { text = "" } }, enabled = text.isNotBlank() && other != null) {
                         Icon(Icons.AutoMirrored.Filled.Send, "Enviar")
                     }
                 }
@@ -200,6 +247,21 @@ fun ChatScreen(vm: ChatViewModel, me: UserProfile, onBack: () -> Unit) {
                 items(messages, key = { it.id }) { msg -> MessageBubble(msg, mine = msg.senderId == me.id) }
             }
         }
+    }
+
+    if (confirmReport) {
+        AlertDialog(
+            onDismissRequest = { confirmReport = false },
+            title = { Text("Denunciar conversa?") },
+            text = { Text("As últimas mensagens de ${other?.name ?: "o atleta"} serão enviadas para a administração da quadra analisar.") },
+            confirmButton = {
+                TextButton(onClick = {
+                    confirmReport = false
+                    vm.report { Toast.makeText(context, "Denúncia enviada. Obrigado!", Toast.LENGTH_SHORT).show() }
+                }) { Text("Denunciar") }
+            },
+            dismissButton = { TextButton(onClick = { confirmReport = false }) { Text("Cancelar") } },
+        )
     }
 }
 

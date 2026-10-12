@@ -1,0 +1,3 @@
+# Instaladores gerados (APK/IPA) ficam na raiz, fora do git.
+/*.apk
+/*.ipa

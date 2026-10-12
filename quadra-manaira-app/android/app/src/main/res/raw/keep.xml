@@ -1,0 +1,3 @@
+<?xml version="1.0" encoding="utf-8"?>
+<!-- O Repo busca o id do login com Google pelo nome (getIdentifier); sem isto o shrinkResources o remove no release. -->
+<resources xmlns:tools="http://schemas.android.com/tools" tools:keep="@string/default_web_client_id" />

@@ -44,11 +44,22 @@ jobs:
         with:
           name: telas-ios
           path: quadra-manaira-app/ios/telas
-      - name: Build de release (sem assinatura)
+      - name: Build de release (sem assinatura) e .ipa
+        if: always()
+        env:
+          GOOGLE_SERVICE_INFO: ${{ secrets.IOS_GOOGLE_SERVICE_INFO }}
         run: |
           set -o pipefail
-          xcodebuild build -project QuadraManaira.xcodeproj -scheme QuadraManaira -configuration Release \
-            -destination "generic/platform=iOS" CODE_SIGNING_ALLOWED=NO | grep -E "error:|BUILD" 
+          # Com o segredo, o release aponta para o Firebase real; sem ele, abre a tela "Firebase não configurado".
+          if [ -n "$GOOGLE_SERVICE_INFO" ]; then echo "$GOOGLE_SERVICE_INFO" | base64 --decode > QuadraManaira/GoogleService-Info.plist && xcodegen; fi
+          xcodebuild build -project QuadraManaira.xcodeproj -scheme QuadraManaira -configuration Release             -destination "generic/platform=iOS" -derivedDataPath build CODE_SIGNING_ALLOWED=NO | grep -E "error:|BUILD"
+          # .ipa sem assinatura: para instalar num iPhone, assine com Sideloadly/AltStore (Apple ID) ou pelo TestFlight.
+          mkdir -p Payload && cp -R build/Build/Products/Release-iphoneos/QuadraManaira.app Payload/ && zip -qr QuadraManaira.ipa Payload
+      - if: always()
+        uses: actions/upload-artifact@v4
+        with:
+          name: ipa
+          path: quadra-manaira-app/ios/QuadraManaira.ipa
       - if: failure()
         uses: actions/upload-artifact@v4
         with:

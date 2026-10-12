@@ -1,0 +1,5 @@
+<resources>
+    <style name="Theme.Quadra" parent="android:Theme.Material.Light.NoActionBar">
+        <item name="android:windowBackground">#EEF2F0</item>
+    </style>
+</resources>

@@ -1,18 +1,17 @@
 # Quadra de Manaíra — Notas do projeto
 
-_Última atualização: 2026-09-22_
+_Última atualização: 2026-10-12_
 
 ## Status atual
 
-- [x] Análise do APK
-- [x] Código decompilado extraído em `codigo_extraido/` (ver `codigo_extraido/LEIAME.md`)
-- [x] Levantamento de bugs e do problema do banco (seções 4.1 e 5)
-- [x] Proposta de refatoração para backend (seção 7)
-- [x] Backend escolhido: **Firebase** (Auth + Firestore + FCM + Cloud Functions)
-- [x] App novo escrito em `quadra-manaira-app/` (seção 8)
-- [ ] **Pendente (você):** criar o projeto no Firebase e adicionar `app/google-services.json` (passo a passo em `quadra-manaira-app/LEIAME.md`)
-- [ ] Compilar e testar no Android Studio (ainda não compilado: esta máquina não tem Java/Android SDK)
-- [ ] Deploy das regras e das Functions (`firebase deploy`)
+- [x] Análise do APK, bugs e proposta de backend (seções 1 a 7)
+- [x] Backend: **Firebase** (Auth + Firestore + FCM + Cloud Functions)
+- [x] 2026-09-22/28: primeiro app Kotlin (seção 8, **substituído**; está no commit `7ba3fb7`)
+- [x] 2026-10-11: **reescrita do zero**: app Android nativo (Compose), app iOS nativo (SwiftUI) e backend refeito (seção 9)
+- [x] Android compilado e testado de ponta a ponta no emulador; regras testadas; auditoria de configurações inseguras (seção 10)
+- [x] 2026-10-12: iOS compila e passa nos testes no GitHub Actions (`.github/workflows/ios.yml`); telas ainda não vistas num iPhone
+- [x] 2026-10-12: **e-mail confirmado obrigatório** (achado MÉDIO da auditoria, seção 10)
+- [ ] **Pendente (você):** criar o Firebase (Android + iOS + chave APNs). Passo a passo em `quadra-manaira-app/LEIAME.md`
 - Lista completa do que falta: **`PENDENCIAS.md`**
 
 ---
@@ -168,7 +167,7 @@ Supabase
 
 ---
 
-## 8. App novo: `quadra-manaira-app/`
+## 8. Primeiro app Kotlin (setembro de 2026, substituído pela seção 9)
 
 > Decisão: **Firebase** em vez do Supabase recomendado na seção 7. As limitações do NoSQL foram contornadas assim: o conflito de horário usa documentos de "slot" protegidos por regra, e o contador de curtidas é validado pelas regras.
 
@@ -200,10 +199,76 @@ Supabase
 - **Foto anexada no mural** ainda não foi implementada (exigiria o Firebase Storage). Avatares continuam sendo emojis.
 - Só o **organizador** pode cancelar o próprio agendamento.
 
+### Correções de 2026-09-28 (itens da seção 3 do PENDENCIAS)
+- **Privacidade:** `users/{uid}` só tem nome, avatar, esporte e `birthDayMonth`. E-mail, nascimento e lista de bloqueados ficam em `users/{uid}/private/data` (só o dono lê). `UserRepository.myProfile` junta as duas partes.
+- **Excluir conta:** Perfil → "Excluir minha conta". O app apaga o usuário do Auth (se o login for antigo, pede para sair e entrar de novo); a Function `onUserDeleted` (gatilho v1 de Auth) apaga posts, curtidas, conversas, agendamentos (jogos futuros viram cancelados) e o perfil.
+- **Denunciar/bloquear:** menu ⋮ no post e na conversa. Denúncia grava em `reports` (só leitura pelo console; **alguém precisa olhar lá**). Bloquear esconde posts e conversas da pessoa e as regras recusam mensagens dela.
+- **Regras:** chat só aceita os nomes reais dos perfis e não lidas só zeram (as minhas) ou sobem 1 (as do outro); agendamento exige todos os blocos de 30 min do intervalo, e cada bloco tem de estar dentro de um agendamento confirmado do próprio usuário.
+- **Push:** aviso geral virou mensagem só `data` com `excludeUid`, então quem agenda/cancela/faz aniversário não recebe o aviso duplicado; chave "Avisos gerais da quadra" no Perfil silencia os avisos gerais.
+- **Functions novas:** `onPostDeleted` (curtidas órfãs), `monthlyCleanup` (agendamentos e slots de datas passadas), `onUserDeleted`.
+- **Chat:** mensagem sai com o nome atual (antes usava o perfil de quando a tela abriu).
+
 ### Status da verificação
 - Functions (TypeScript): `tsc` passou sem erros.
 - App Android: **não compilado ainda**. Revisei o código manualmente, mas o primeiro build no Android Studio pode apontar ajustes pequenos.
-- Regras do Firestore: não testadas no emulador (também precisa de Java).
+- Regras do Firestore: **15 testes passando no emulador** (2026-09-28), `cd firebase/functions && npm run test:rules`. Precisa de Java 11+ no PATH (usei um JRE portátil só para rodar).
+
+## 9. Reescrita nativa (2026-10-11)
+
+Pedido: apps Android e iOS **do zero**, código enxuto ("ponytail"), skill de design, animações, Android primeiro.
+Escolhas confirmadas com o usuário: apagar e recriar tudo (backup no commit `7ba3fb7`, branch `app-nativo`) e **nativo separado** (Kotlin/Compose + Swift/SwiftUI).
+
+### Estrutura
+`quadra-manaira-app/android`, `quadra-manaira-app/ios`, `quadra-manaira-app/firebase`. Os dois apps têm os mesmos arquivos (Data, App, Theme, telas) e as mesmas regras puras (horários, blocos de 30 min, nascimento), com testes nos dois.
+
+### Enxugamento em relação ao app de setembro
+- Android: de 30 arquivos para 9; sem ViewModels, sem navigation-compose e sem injeção de dependência (um `object Repo` com os fluxos do Firestore e as telas coletando direto).
+- Push: o aviso geral deixou de ser por tópico com filtro no aparelho (não funciona no iOS) e passou a ser por token, escolhido pela Function. A chave "Avisos gerais" agora vale no servidor (campo `broadcasts` do token).
+- FCM 26 (Firebase BOM 35) tornou `getToken()`/`onNewToken` obsoletos; o app usa `register()` + `onRegistered`.
+- iOS sem login com Google (a App Store exigiria "Entrar com a Apple").
+
+### Design
+- Paleta da própria quadra: verde-azulado do mar (#0B6E69), amarelo das linhas do piso (#F5C400), concreto (#EEF2F0), tinta (#0F2A28); coral só para curtir e ações destrutivas.
+- Fonte de placar (Barlow Condensed SemiBold) em títulos, horários e números; texto corrido na fonte do sistema.
+- Destaque único: a **linha do dia** na Agenda (06:00 às 22:00 como as linhas do piso; jogos são blocos; faixa amarela = jogo seu; linha amarela = agora; tocar num espaço livre já abre o agendamento naquele horário).
+- Faixa do mar com o clima e a hora em que o sol nasceu (João Pessoa é onde ele nasce primeiro nas Américas).
+- Movimento: os blocos crescem em cascata ao trocar de dia; o coração pulsa ao curtir; telas por cima deslizam da direita. Respeita "reduzir movimento" (Android pela escala de animação do sistema; iOS por `accessibilityReduceMotion`).
+- Ícone novo: as linhas da quadra vistas de cima. **Os ícones do app antigo estavam todos corrompidos** (nenhum `.webp` abria).
+
+### Bugs achados nos testes de ponta a ponta (corrigidos)
+- Campo de nascimento: a barra automática deixava o cursor para trás (`15032000` virava `15/02/0003`).
+- Título "Quadra de Manaíra" duplicado sobre a foto de capa (a foto já tem o letreiro).
+- Rótulo amarelo da aba selecionada com pouco contraste; faixa do clima mudava de altura ao carregar.
+- Regras: o helper `doc(caminho)` virava um segmento só (`$(path)` não aceita barras). Os testes pegaram.
+
+### Ambiente desta máquina (para as próximas sessões)
+- JDK 21 em `%LOCALAPPDATA%\jdk-21`, Android SDK em `%LOCALAPPDATA%\Android\Sdk` (licenças aceitas, emulador e AVD `quadra` com Android 15), Gradle 9.8.1.
+- No Git Bash, tirar a aspa solta do PATH antes do Gradle (`tr -d` na variável), senão os testes do Gradle quebram.
+- O git usa credencial de outra conta (Tech-Mack); o push vai com `git -c credential.helper= -c "credential.helper=!gh auth git-credential" push`.
+
+## 10. Auditoria de configurações inseguras (2026-10-11)
+
+Adaptação do `/insecure-defaults:audit` (Trail of Bits) feita à mão, porque aqui não há a ferramenta de Workflow do plugin. Mesmo método: varredura das 6 categorias (segredos com valor padrão, credenciais padrão, chaves que falham abertas, criptografia fraca, acesso permissivo, vazamento de depuração), depois verificação de cada candidato pelos 5 passos (chega em produção? o valor inseguro é o que roda? é inseguro mesmo? chega numa decisão de segurança? o deploy sempre fornece a config?).
+
+**Validação "sem autenticação, falha fechada"** (equivalente ao REQUIRE_AUTH do prompt), testada de verdade:
+- Firestore sem login: leitura de `users`, `posts`, `bookings`, `conversations`, `reports` e escrita em `posts` → **HTTP 403** em todas.
+- APK de release sem `google-services.json` → abre só a tela "Firebase não configurado"; nada se conecta.
+- iOS: mesmo desenho (`#if DEBUG` para o emulador; release sem plist mostra a tela de configuração). Não executado (sem Mac).
+
+**Achados**
+
+| # | Severidade | Categoria | Onde (sink) | Problema | Correção |
+|---|---|---|---|---|---|
+| 1 | MÉDIA | acesso permissivo | `firestore.rules` (`signedIn()` em posts, bookings, messages) | Conta com e-mail **não verificado** escreve tudo: dá para criar contas em série com e-mails falsos (ou de outra pessoa) e postar, agendar e mandar mensagens | Mandar e-mail de verificação no cadastro e exigir `request.auth.token.email_verified == true` nas escritas (login Google já vem verificado). Precisa de uma tela "confirme seu e-mail" nos dois apps. **Feito em 2026-10-12** (ver histórico) |
+| 2 | BAIXA | padrão fraco | Firebase Auth (console) | Política de senha padrão aceita 6 caracteres | Ativar a política de senha no console (mínimo 8, letras e números) |
+| 3 | BAIXA | acesso permissivo | `ios/project.yml` (`NSAllowsLocalNetworking`) | HTTP liberado para a rede local também no release | Aceito: o release não faz chamadas locais e o TLS para Firebase/Open-Meteo continua obrigatório. Para zerar, separar o Info.plist por configuração |
+
+**Refutados** (não chegam em produção ou não são inseguros): `demo-key`/`demo-quadra` e `useEmulator` (só no debug, e não são segredos), `usesCleartextTraffic` (só no manifest de debug), `broadcasts` ligado por padrão (preferência de aviso, não segurança), leituras com `signedIn()` (comunidade aberta por desenho; e-mail, nascimento e bloqueios ficam em `private/data`), `exported="true"` só na tela inicial, logs com uid só nos logs do projeto.
+
+**Dependências (o mesmo problema do `npm audit` de setembro, procurado de novo):**
+- Functions: `firebase@13` → `@firebase/firestore` trava `@grpc/grpc-js ~1.9` (5 falhas HIGH). Corrigido com `overrides` → 1.14.6. `npm audit`: **0**.
+- Android: consulta das 208 bibliotecas no OSV achou **Jackson 2.21.3** (puxado pelo `firebase-firestore` 27) com falhas HIGH. Corrigido forçando `jackson-bom:2.21.7`. Nova consulta: **0**. App testado de novo no emulador depois da troca.
+- iOS (SwiftPM): só dá para conferir depois que o Mac resolver os pacotes (`Package.resolved`).
 
 ## Histórico
 
@@ -212,3 +277,7 @@ Supabase
 - **2026-09-22**: proposta de refatoração para backend (Supabase + FCM).
 - **2026-09-22**: escolhido o Firebase; criado `quadra-manaira-app/` (app Kotlin/Compose + regras + Cloud Functions). Firebase ainda não criado.
 - **2026-09-22**: criado `PENDENCIAS.md` com tudo o que falta (configuração, testes, problemas conhecidos, publicação).
+- **2026-09-28**: resolvidos os itens de código da seção 3 do `PENDENCIAS.md` (privacidade, excluir conta, denunciar/bloquear, regras de chat e slots, limpezas, push duplicado, silenciar avisos) + testes das regras no emulador. App Android ainda não compilado.
+- **2026-10-11**: reescrita do zero (seção 9): Android nativo novo, iOS nativo, regras e Functions refeitas; Android compilado e testado de ponta a ponta no emulador com o Firebase Emulator; regras com 8 cenários de teste; auditoria de configurações inseguras e de dependências (seção 10: grpc-js e Jackson corrigidos); branch `app-nativo` enviado ao GitHub. iOS aguarda compilação no GitHub Actions.
+- **2026-10-12**: escopo `workflow` liberado no `gh`; o iOS compilou de primeira no GitHub Actions, mas os testes derrubavam o app: no modo emulador o SDK exige uma chave no formato real (39 caracteres, começando com "A"). Corrigido; `deleteToken()` trocado por `unregister()`. **E-mail confirmado obrigatório**: regras com `verified()` (`email_verified` no token) em tudo fora do próprio perfil, tokens e alertas; o cadastro manda o link e a sessão para em "Confirme seu e-mail" (Android `Session.Unverified`, iOS `.unverified`), que confere sozinha ao voltar para o app; a sessão ouve o token (`IdTokenListener`), que é o que muda ao confirmar. Teste das regras novo (9/9). Testado no emulador Android: conta nova fica presa na tela de confirmação, "Já confirmei" antes do link dá erro, link do emulador → voltar ao app abre a agenda. **Bug achado no teste:** o link não saía no cadastro porque, criada a conta, a tela de login sai de cena e cancela a corrotina do cadastro no meio; o resto do cadastro (e do primeiro login com Google) agora roda em `NonCancellable`.
+- **2026-10-12**: aberto o PR #1 (`app-nativo` → `main`).

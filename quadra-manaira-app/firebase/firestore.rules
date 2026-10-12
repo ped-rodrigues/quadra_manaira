@@ -1,145 +1,233 @@
 rules_version = '2';
 
-// Regras de segurança do Firestore da Quadra de Manaíra.
-// O app nunca é confiável: toda regra de negócio importante é validada aqui.
+// Regras da Quadra de Manaíra. Os apps (Android e iOS) não são confiáveis:
+// toda regra de negócio que importa é conferida aqui. Testes: functions/test/rules.test.mjs.
 service cloud.firestore {
   match /databases/{database}/documents {
 
-    function signedIn() {
-      return request.auth != null;
+    function signedIn() { return request.auth != null; }
+    function isUser(uid) { return signedIn() && request.auth.uid == uid; }
+    // Comunidade (ler e escrever fora do próprio perfil) só com e-mail confirmado. Google já vem confirmado.
+    // O dono mexe no próprio perfil antes disso, porque o cadastro grava o perfil e só depois confirma.
+    function verified() { return signedIn() && request.auth.token.email_verified == true; }
+    function data() { return request.resource.data; }
+
+    function validSport(s) { return s in ['FUTEBOL', 'BASQUETE', 'VOLEI_PRAIA', 'GINASTICA']; }
+    function validDate(s) { return s is string && s.matches('^\\d{4}-\\d{2}-\\d{2}$'); }
+    // Hora cheia ou meia hora, das 06:00 às 22:00.
+    function validTime(s) { return s is string && s.matches('^((0[6-9]|1\\d|2[0-1]):(00|30)|22:00)$'); }
+    function minutes(t) { return int(t[0:2]) * 60 + int(t[3:5]); }
+    function text(s, min, max) { return s is string && s.size() >= min && s.size() <= max; }
+
+    // Id do i-ésimo bloco de 30 min a partir de `start` (ex.: 2026-10-01_08:30).
+    function slotKey(date, start, i) {
+      let half = start[3:5] == '30';
+      let h = int(start[0:2]) + (half ? [0, 1, 1, 2, 2, 3] : [0, 0, 1, 1, 2, 2])[i];
+      let m = (half ? ['30', '00', '30', '00', '30', '00'] : ['00', '30', '00', '30', '00', '30'])[i];
+      return date + '_' + (h < 10 ? '0' : '') + string(h) + ':' + m;
     }
 
-    function isUser(uid) {
-      return signedIn() && request.auth.uid == uid;
+    // O bloco i existe ao fim da escrita e aponta para o agendamento (ou o jogo acaba antes dele).
+    function slotCovered(b, bookingId, i) {
+      return minutes(b.startTime) + 30 * i >= minutes(b.endTime)
+        || getAfter(/databases/$(database)/documents/slots/$(slotKey(b.date, b.startTime, i))).data.bookingId == bookingId;
     }
 
-    function data() {
-      return request.resource.data;
-    }
-
-    function validDate(s) {
-      return s is string && s.matches('^\\d{4}-\\d{2}-\\d{2}$');
-    }
-
-    function validTime(s) {
-      // Só horários cheios ou meia-hora, das 06:00 às 22:00.
-      return s is string && s.matches('^(0[6-9]|1\\d|2[0-2]):(00|30)$');
+    function blockedBy(uid) {
+      let p = /databases/$(database)/documents/users/$(uid)/private/data;
+      return exists(p) && request.auth.uid in get(p).data.get('blocked', []);
     }
 
     // ---------- Usuários ----------
+    // users/{uid} é visível para quem confirmou o e-mail: só nome, avatar, esporte e dia/mês do aniversário.
     match /users/{uid} {
-      allow read: if signedIn();
+      allow read: if verified();
       allow create, update: if isUser(uid)
-        && data().name is string && data().name.size() >= 2 && data().name.size() <= 60
+        && data().keys().hasOnly(['name', 'nameLower', 'birthDayMonth', 'sport', 'avatar', 'createdAt'])
+        && text(data().name, 2, 60)
         && data().nameLower == data().name.lower()
-        && data().email == request.auth.token.email
-        && data().sport in ['FUTEBOL', 'BASQUETE', 'VOLEI_PRAIA', 'GINASTICA'];
+        && data().birthDayMonth is string && data().birthDayMonth.matches('^(\\d{2}/\\d{2})?$')
+        && validSport(data().sport)
+        && data().avatar in ['🏄', '⚽', '🏐', '🏀', '🤸'];
       allow delete: if false;
 
-      // Tokens de push dos aparelhos do usuário.
-      match /tokens/{token} {
-        allow read, write: if isUser(uid);
+      // E-mail, nascimento e bloqueios: só o dono.
+      match /private/{docId} {
+        allow read: if isUser(uid);
+        allow create, update: if isUser(uid) && docId == 'data'
+          && data().keys().hasOnly(['email', 'birthDate', 'blocked'])
+          && data().get('email', '') == request.auth.token.get('email', '')
+          && text(data().get('birthDate', ''), 0, 10)
+          && data().get('blocked', []) is list && data().get('blocked', []).size() <= 500;
+        allow delete: if false;
       }
 
-      // Histórico de notificações: criado só pelas Cloud Functions; o usuário só marca como lida.
+      // Aparelhos para push. `broadcasts` = quer os avisos gerais da quadra.
+      match /tokens/{token} {
+        allow read, delete: if isUser(uid);
+        allow create, update: if isUser(uid)
+          && data().keys().hasOnly(['platform', 'broadcasts', 'createdAt'])
+          && data().platform in ['android', 'ios']
+          && data().broadcasts is bool;
+      }
+
+      // Histórico de notificações: só as Cloud Functions criam; o dono só marca como lida.
       match /notifications/{id} {
         allow read, delete: if isUser(uid);
-        allow update: if isUser(uid) && request.resource.data.diff(resource.data).affectedKeys().hasOnly(['read']);
+        allow update: if isUser(uid) && data().diff(resource.data).affectedKeys().hasOnly(['read']);
         allow create: if false;
       }
     }
 
-    // ---------- Agendamentos ----------
+    // ---------- Agenda ----------
     match /bookings/{bookingId} {
-      allow read: if signedIn();
+      allow read: if verified();
 
-      // Só cria em nome próprio e só se o bloco inicial de horário foi reservado na mesma transação.
-      allow create: if signedIn()
+      // Em nome próprio, até 3 h, e só se TODOS os blocos de 30 min foram reservados na mesma transação.
+      allow create: if verified()
+        && data().keys().hasOnly(['date', 'startTime', 'endTime', 'startAt', 'sport', 'organizerId', 'organizerName', 'notes', 'status', 'reminderSent', 'createdAt'])
         && data().organizerId == request.auth.uid
+        && data().organizerName == get(/databases/$(database)/documents/users/$(request.auth.uid)).data.name
         && data().status == 'CONFIRMED'
         && data().reminderSent == false
+        && data().startAt is timestamp
         && validDate(data().date) && validTime(data().startTime) && validTime(data().endTime)
-        && data().endTime > data().startTime
-        && data().sport in ['FUTEBOL', 'BASQUETE', 'VOLEI_PRAIA', 'GINASTICA']
-        && data().notes is string && data().notes.size() <= 300
-        && getAfter(/databases/$(database)/documents/slots/$(data().date + '_' + data().startTime)).data.bookingId == bookingId;
+        && minutes(data().endTime) > minutes(data().startTime)
+        && minutes(data().endTime) - minutes(data().startTime) <= 180
+        && validSport(data().sport)
+        && text(data().notes, 0, 300)
+        && slotCovered(data(), bookingId, 0) && slotCovered(data(), bookingId, 1)
+        && slotCovered(data(), bookingId, 2) && slotCovered(data(), bookingId, 3)
+        && slotCovered(data(), bookingId, 4) && slotCovered(data(), bookingId, 5);
 
-      // Só o organizador cancela, e cancelar é a única alteração permitida.
-      allow update: if signedIn()
+      // Só o organizador cancela, e cancelar é a única mudança possível.
+      allow update: if verified()
         && resource.data.organizerId == request.auth.uid
-        && request.resource.data.diff(resource.data).affectedKeys().hasOnly(['status'])
+        && data().diff(resource.data).affectedKeys().hasOnly(['status'])
         && data().status == 'CANCELLED';
 
       allow delete: if false;
     }
 
-    // Blocos de 30 min ocupados. Não podem ser sobrescritos (update proibido) → impede conflito de horário.
+    // Blocos de 30 min ocupados. Não dá para sobrescrever (update proibido): é isso que impede conflito.
+    // Cada bloco precisa cair dentro de um agendamento confirmado do próprio usuário.
     match /slots/{slotId} {
-      allow read: if signedIn();
-      allow create: if signedIn()
+      function inBooking(b) {
+        let day = slotId.split('_')[0];
+        let time = slotId.split('_')[1];
+        return b.organizerId == request.auth.uid && b.status == 'CONFIRMED'
+          && b.date == day && data().date == day
+          && validTime(time) && minutes(time) >= minutes(b.startTime) && minutes(time) < minutes(b.endTime);
+      }
+
+      allow read: if verified();
+      allow create: if verified()
+        && data().keys().hasOnly(['bookingId', 'organizerId', 'date'])
         && data().organizerId == request.auth.uid
         && slotId.matches('^\\d{4}-\\d{2}-\\d{2}_\\d{2}:\\d{2}$')
-        && getAfter(/databases/$(database)/documents/bookings/$(data().bookingId)).data.organizerId == request.auth.uid;
+        && inBooking(getAfter(/databases/$(database)/documents/bookings/$(data().bookingId)).data);
       allow update: if false;
-      allow delete: if signedIn() && resource.data.organizerId == request.auth.uid;
+      allow delete: if verified() && resource.data.organizerId == request.auth.uid;
     }
 
     // ---------- Mural ----------
     match /posts/{postId} {
-      allow read: if signedIn();
-      allow create: if signedIn()
-        && data().authorId == request.auth.uid
-        && data().likesCount == 0
-        && data().text is string && data().text.size() >= 1 && data().text.size() <= 1000;
-      allow delete: if signedIn() && resource.data.authorId == request.auth.uid;
+      function liked() { return exists(/databases/$(database)/documents/posts/$(postId)/likes/$(request.auth.uid)); }
+      function likedAfter() { return existsAfter(/databases/$(database)/documents/posts/$(postId)/likes/$(request.auth.uid)); }
 
-      // Único update permitido: +1/-1 no contador, junto com a criação/remoção da própria curtida.
-      allow update: if signedIn()
-        && request.resource.data.diff(resource.data).affectedKeys().hasOnly(['likesCount'])
-        && (
-          (data().likesCount == resource.data.likesCount + 1
-            && !exists(/databases/$(database)/documents/posts/$(postId)/likes/$(request.auth.uid))
-            && existsAfter(/databases/$(database)/documents/posts/$(postId)/likes/$(request.auth.uid)))
-          ||
-          (data().likesCount == resource.data.likesCount - 1
-            && exists(/databases/$(database)/documents/posts/$(postId)/likes/$(request.auth.uid))
-            && !existsAfter(/databases/$(database)/documents/posts/$(postId)/likes/$(request.auth.uid)))
-        );
+      allow read: if verified();
+      allow create: if verified()
+        && data().keys().hasOnly(['authorId', 'authorName', 'authorAvatar', 'sport', 'text', 'likesCount', 'createdAt'])
+        && data().authorId == request.auth.uid
+        && data().authorName == get(/databases/$(database)/documents/users/$(request.auth.uid)).data.name
+        && validSport(data().sport)
+        && data().likesCount == 0
+        && text(data().text, 1, 1000);
+      allow delete: if verified() && resource.data.authorId == request.auth.uid;
+
+      // Única mudança: +1/-1 no contador junto com criar/apagar a própria curtida.
+      allow update: if verified()
+        && data().diff(resource.data).affectedKeys().hasOnly(['likesCount'])
+        && ((data().likesCount == resource.data.likesCount + 1 && !liked() && likedAfter())
+          || (data().likesCount == resource.data.likesCount - 1 && liked() && !likedAfter()));
 
       match /likes/{uid} {
-        allow read: if signedIn();
-        allow create: if isUser(uid) && data().uid == uid;
-        allow delete: if isUser(uid);
+        allow read: if verified();
+        allow create: if verified() && isUser(uid) && data().keys().hasOnly(['uid', 'createdAt']) && data().uid == uid
+          && getAfter(/databases/$(database)/documents/posts/$(postId)).data.likesCount == get(/databases/$(database)/documents/posts/$(postId)).data.likesCount + 1;
+        allow delete: if verified() && isUser(uid)
+          && getAfter(/databases/$(database)/documents/posts/$(postId)).data.likesCount == get(/databases/$(database)/documents/posts/$(postId)).data.likesCount - 1;
       }
     }
 
     // Consulta "minhas curtidas" (collection group).
     match /{path=**}/likes/{uid} {
-      allow read: if signedIn();
+      allow read: if verified();
     }
 
-    // ---------- Chat ----------
-    // O id da conversa é "uidA_uidB" (ordenados), então dá pra saber os participantes pelo id.
+    // ---------- Conversas ----------
+    // O id é "uidA_uidB" (ordenado), então os participantes saem do próprio id.
     match /conversations/{convId} {
-      function isParticipant() {
-        return signedIn() && request.auth.uid in convId.split('_');
+      function ids() { return convId.split('_'); }
+      function isParticipant() { return verified() && request.auth.uid in ids(); }
+      function otherId() { return ids()[0] == request.auth.uid ? ids()[1] : ids()[0]; }
+      function nameOf(uid) { return get(/databases/$(database)/documents/users/$(uid)).data.name; }
+
+      // Nomes iguais aos de antes, ou exatamente os nomes atuais dos dois perfis.
+      function validNames(before) {
+        return data().names == before
+          || (data().names.keys().hasOnly(ids())
+            && data().names[request.auth.uid] == nameOf(request.auth.uid)
+            && data().names[otherId()] == nameOf(otherId()));
+      }
+
+      // Não lidas: o meu contador só zera; o do outro só sobe 1.
+      function validUnread(before) {
+        let u = data().unread;
+        let me = request.auth.uid;
+        return u.keys().hasOnly(ids())
+          && (u.get(me, 0) == 0 || u.get(me, 0) == before.get(me, 0))
+          && (u.get(otherId(), 0) == before.get(otherId(), 0) || u.get(otherId(), 0) == before.get(otherId(), 0) + 1);
+      }
+
+      function validConversation(beforeNames, beforeUnread) {
+        return isParticipant()
+          && ids().size() == 2 && ids()[0] < ids()[1]
+          && data().participants == ids()
+          && data().keys().hasOnly(['participants', 'names', 'lastMessage', 'lastSenderId', 'lastAt', 'unread'])
+          && validNames(beforeNames)
+          && validUnread(beforeUnread);
       }
 
       allow get: if isParticipant();
-      allow list: if signedIn() && request.auth.uid in resource.data.participants;
-      allow create, update: if isParticipant()
-        && data().participants == convId.split('_');
+      allow list: if verified() && request.auth.uid in resource.data.participants;
+      allow create: if validConversation({}, {});
+      allow update: if validConversation(resource.data.get('names', {}), resource.data.get('unread', {}));
       allow delete: if false;
 
       match /messages/{messageId} {
         allow read: if isParticipant();
         allow create: if isParticipant()
+          && data().keys().hasOnly(['senderId', 'receiverId', 'text', 'createdAt'])
           && data().senderId == request.auth.uid
-          && data().receiverId in convId.split('_')
-          && data().receiverId != request.auth.uid
-          && data().text is string && data().text.size() >= 1 && data().text.size() <= 2000;
+          && data().receiverId == otherId()
+          && !blockedBy(data().receiverId)
+          && text(data().text, 1, 2000);
         allow update, delete: if false;
       }
+    }
+
+    // ---------- Denúncias ----------
+    // Qualquer pessoa logada denuncia; só a administração lê, pelo console do Firebase.
+    match /reports/{reportId} {
+      allow create: if verified()
+        && data().keys().hasOnly(['reporterId', 'type', 'targetId', 'targetUserId', 'text', 'createdAt'])
+        && data().reporterId == request.auth.uid
+        && data().type in ['POST', 'CHAT']
+        && text(data().targetId, 1, 200)
+        && text(data().targetUserId, 1, 128)
+        && text(data().text, 0, 2000);
+      allow read, update, delete: if false;
     }
   }
 }

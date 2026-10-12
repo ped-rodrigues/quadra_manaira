@@ -42,6 +42,9 @@ dependencies {
     implementation("com.google.firebase:firebase-auth")
     implementation("com.google.firebase:firebase-firestore")
     implementation("com.google.firebase:firebase-messaging")
+    // firebase-firestore 27 puxa o Jackson 2.21.3, com falhas HIGH corrigidas na 2.21.7 (OSV/GHSA).
+    // Mesmo papel do "overrides" no package.json das Functions; tirar quando o Firebase subir a versão.
+    implementation(platform("com.fasterxml.jackson:jackson-bom:2.21.7"))
     implementation("org.jetbrains.kotlinx:kotlinx-coroutines-play-services:1.11.0")
 
     implementation("androidx.credentials:credentials:1.6.0")
